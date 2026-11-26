@@ -573,26 +573,31 @@ private fun AuthenticatedShell(container: AppContainer) {
             enter = overlayEnter,
             exit = overlayExit,
         ) {
-            val scanningP2pkKey = lastScannerTarget == ScannerTarget.P2pkLock
+            val scanningP2pkKey = shouldProvideP2pkQuickActions(lastScannerTarget)
             // Key shortcuts ("Lock to my key" / "Paste key") stay colocated
             // with the Send Ecash flow; a selected key takes the same return
-            // path as a scanned one.
-            val p2pkQuickActions = rememberP2pkScannerQuickActions(
-                settingsManager = container.settingsManager,
-                onSelectKey = { key ->
-                    scannerTarget = null
-                    if (isRuntimeReadyRef) {
-                        pendingP2pkScan = key
-                        openPaymentFlow(WalletFlow.SendEcash)
-                    }
-                },
-            )
+            // path as a scanned one. Gate composition on `scanningP2pkKey` so
+            // ordinary Home QR scans never touch clipboard state.
+            val p2pkQuickActions = if (scanningP2pkKey) {
+                rememberP2pkScannerQuickActions(
+                    settingsManager = container.settingsManager,
+                    onSelectKey = { key ->
+                        scannerTarget = null
+                        if (isRuntimeReadyRef) {
+                            pendingP2pkScan = key
+                            openPaymentFlow(WalletFlow.SendEcash)
+                        }
+                    },
+                )
+            } else {
+                emptyList()
+            }
             ScannerView(
                 onClose = closeScanner,
                 useDeterministicPermission =
                     container.runtimePolicy.useDeterministicCameraPermission,
                 promptText = if (scanningP2pkKey) LockEcashCopy.ScanPrompt else ScannerDefaultPrompt,
-                quickActions = if (scanningP2pkKey) p2pkQuickActions else emptyList(),
+                quickActions = p2pkQuickActions,
                 sessionId = scannerSessionId,
                 onScanned = { payload ->
                     scannerTarget = null
@@ -891,6 +896,9 @@ private fun LoadingScreen() {
 }
 
 internal enum class ScannerTarget { Auto, P2pkLock }
+
+internal fun shouldProvideP2pkQuickActions(target: ScannerTarget): Boolean =
+    target == ScannerTarget.P2pkLock
 
 private fun routeScannedPayload(
     target: ScannerTarget,

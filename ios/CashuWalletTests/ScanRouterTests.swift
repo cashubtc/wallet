@@ -1,3 +1,4 @@
+import AVFoundation
 import XCTest
 @testable import CashuWallet
 
@@ -146,5 +147,164 @@ final class PaymentRequestDisplayTests: XCTestCase {
     func testLightningAddressesStayWhole() {
         let address = "Satoshi.Nakamoto@lightning.example.com"
         XCTAssertEqual(PaymentRequestDecoder.displayRequest(address, result: .lightningAddress(address)), address)
+    }
+}
+
+final class CameraAuthorizationStateTests: XCTestCase {
+    func testMapsSystemAuthorizationStatusesSynchronously() {
+        XCTAssertEqual(CameraAuthorizationState.from(authorizationStatus: .authorized), .authorized)
+        XCTAssertEqual(CameraAuthorizationState.from(authorizationStatus: .notDetermined), .checking)
+        XCTAssertEqual(CameraAuthorizationState.from(authorizationStatus: .denied), .denied)
+        XCTAssertEqual(CameraAuthorizationState.from(authorizationStatus: .restricted), .restricted)
+    }
+
+    func testDeterministicTestCameraAlwaysStartsAuthorized() {
+        XCTAssertEqual(
+            CameraAuthorizationState.from(authorizationStatus: .notDetermined, usesTestCamera: true),
+            .authorized
+        )
+        XCTAssertEqual(
+            CameraAuthorizationState.from(authorizationStatus: .denied, usesTestCamera: true),
+            .authorized
+        )
+    }
+}
+
+@MainActor
+final class HomeScanIntakeTests: XCTestCase {
+    func testCashuRequestEvaluatesRoutePolicyOnceAndParksSheet() throws {
+        let nav = NavigationManager()
+        nav.activeWalletSheet = .scanner
+        let creq = try PaymentRequestBuilder.build(
+            id: "single-pass-test",
+            amount: 42,
+            unit: "sat",
+            mints: [],
+            description: nil,
+            nostrPubkeyHex: String(repeating: "c", count: 64),
+            relays: ["wss://relay.example.com"]
+        )
+
+        var policyEvaluations = 0
+        let verdict = nav.handleScannedPayload(
+            creq,
+            routeForCashuPaymentRequest: { summary, _ in
+                policyEvaluations += 1
+                return .payWithEcash(summary)
+            }
+        )
+
+        XCTAssertEqual(verdict, .accept)
+        XCTAssertEqual(policyEvaluations, 1, "home scanner intake must route each scan in a single pass")
+        XCTAssertNil(nav.activeWalletSheet)
+        XCTAssertTrue(nav.isFlowSurfaceOpen)
+
+        nav.sheetDidDismiss()
+        guard case .cashuRequestPay(let summary) = nav.activeWalletSheet else {
+            return XCTFail("Expected parked Cashu request sheet to present after scanner dismissal")
+        }
+        XCTAssertEqual(summary.encoded, creq)
+    }
+
+    func testMintURLCopiesAndReturnsNoticeWithoutParkingSurface() {
+        let nav = NavigationManager()
+        nav.activeWalletSheet = .scanner
+        var copied: String?
+
+        let verdict = nav.handleScannedPayload(
+            "https://mint.example.com",
+            routeForCashuPaymentRequest: { summary, _ in .payWithEcash(summary) },
+            copyMintURL: { copied = $0 }
+        )
+
+        XCTAssertEqual(verdict, .notice(message: "Mint URL copied to clipboard"))
+        XCTAssertEqual(copied, "https://mint.example.com")
+        XCTAssertEqual(nav.activeWalletSheet?.id, "scanner")
+    }
+
+    func testUnrecognizedPayloadReturnsRejectWithoutDismissingScanner() {
+        let nav = NavigationManager()
+        nav.activeWalletSheet = .scanner
+
+        let verdict = nav.handleScannedPayload(
+            "not a payment code",
+            routeForCashuPaymentRequest: { summary, _ in .payWithEcash(summary) }
+        )
+
+        guard case .reject = verdict else {
+            return XCTFail("expected .reject for unrecognized QR")
+        }
+        XCTAssertEqual(nav.activeWalletSheet?.id, "scanner")
+    }
+}
+
+@MainActor
+final class LockScannerQuickFillTests: XCTestCase {
+    func testBuildingLockQuickFillsDoesNotReadClipboardUntilTapped() {
+        let key = "02" + String(repeating: "a", count: 64)
+        var clipboardReads = 0
+
+        let fills = SendView.makeLockQuickFills(
+            showQuickLockToMyKey: true,
+            primaryPublicKey: key,
+            hasClipboardStrings: true,
+            readClipboard: {
+                clipboardReads += 1
+                return "  \(key)  "
+            }
+        )
+
+        XCTAssertEqual(clipboardReads, 0, "opening the lock scanner must never eagerly read UIPasteboard.string")
+        XCTAssertEqual(fills.map(\.title), ["Lock to my key", "Paste key"])
+
+        XCTAssertEqual(fills[0].resolveValue(), key)
+        XCTAssertEqual(clipboardReads, 0)
+
+        XCTAssertEqual(fills[1].resolveValue(), key)
+        XCTAssertEqual(clipboardReads, 1)
+    }
+
+    func testOmitsPasteQuickFillWhenClipboardHasNoStrings() {
+        let fills = SendView.makeLockQuickFills(
+            showQuickLockToMyKey: false,
+            primaryPublicKey: "02" + String(repeating: "a", count: 64),
+            hasClipboardStrings: false,
+            readClipboard: {
+                XCTFail("readClipboard must not be called when hasClipboardStrings is false")
+                return nil
+            }
+        )
+
+        XCTAssertTrue(fills.isEmpty)
+    }
+}
+
+final class ScannerFrameProcessorTests: XCTestCase {
+    func testStandardQRCompletesOnceAndRearmsAfterReset() {
+        let processor = ScannerFrameProcessor()
+
+        let first = processor.process(code: "  cashuAfirst  ")
+        XCTAssertEqual(first, .completed("cashuAfirst", fromAnimatedUR: false, generation: 0))
+
+        // Duplicate frames while disarmed are ignored.
+        XCTAssertNil(processor.process(code: "cashuAfirst"))
+
+        // Re-arming with a new generation allows the next scan.
+        processor.reset(generation: 1)
+        let second = processor.process(code: "cashuAsecond")
+        XCTAssertEqual(second, .completed("cashuAsecond", fromAnimatedUR: false, generation: 1))
+    }
+
+    func testDisarmDropsFramesUntilReset() {
+        let processor = ScannerFrameProcessor()
+        processor.disarm()
+
+        XCTAssertNil(processor.process(code: "cashuAignored"))
+
+        processor.reset(generation: 2)
+        XCTAssertEqual(
+            processor.process(code: "cashuAaccepted"),
+            .completed("cashuAaccepted", fromAnimatedUR: false, generation: 2)
+        )
     }
 }

@@ -804,14 +804,11 @@ struct MainWalletView: View {
             .walletSheetSurface(fillsScreen: true)
         case .scanner:
             // The scanner self-dismisses on a successful read and hands the
-            // payload back; the routed surface presents only after this sheet
-            // is gone — the scanner is never left open underneath.
+            // payload back in one route pass; the routed surface presents only
+            // after this sheet is gone — the scanner is never left open underneath.
             ScannerWrapperView(
-                onScanned: { payload in
-                    navigationManager.routeScannedPayload(payload, walletManager: walletManager)
-                },
-                classify: { payload in
-                    navigationManager.classifyScannedPayload(payload, walletManager: walletManager)
+                onIntake: { payload in
+                    navigationManager.handleScannedPayload(payload, walletManager: walletManager)
                 }
             )
             .environmentObject(walletManager)

@@ -66,4 +66,10 @@ class ShellIdleGateTest {
             ),
         )
     }
+
+    @Test
+    fun p2pkQuickActionsAreGatedToP2pkLockScannerOnly() {
+        assertFalse(shouldProvideP2pkQuickActions(ScannerTarget.Auto))
+        assertTrue(shouldProvideP2pkQuickActions(ScannerTarget.P2pkLock))
+    }
 }

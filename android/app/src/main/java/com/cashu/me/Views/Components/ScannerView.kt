@@ -46,9 +46,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,15 +65,21 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.cashu.me.Core.AnimatedUrDecodeUpdate
 import com.cashu.me.Core.AnimatedUrDecoder
 import com.cashu.me.Core.WalletHaptic
 import com.cashu.me.Core.rememberWalletHaptics
 import com.cashu.me.ui.components.InlineNotice
 import com.cashu.me.ui.components.NoticeSeverity
 import com.cashu.me.ui.components.PrimaryButton
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import java.util.concurrent.Executor
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 internal enum class CameraPermissionState {
     Checking,
@@ -224,24 +232,17 @@ fun ScannerView(
             // chrome and key shortcuts available to app UI journeys.
             Text("Camera Ready", color = Color.White, modifier = Modifier.align(Alignment.Center))
         } else CameraPreviewScanner(
-            onCode = { code ->
+            sessionId = sessionId,
+            animatedUrDecoder = animatedUrDecoder,
+            onCode = { decoded ->
                 if (completedScan) return@CameraPreviewScanner
-                val trimmed = code.trim()
-                if (trimmed.startsWith("ur:", ignoreCase = true)) {
-                    val update = animatedUrDecoder.receivePart(trimmed)
-                    animatedProgress = update.progress
-                    animatedError = update.errorMessage
-                    update.content?.let { decoded ->
-                        completedScan = true
-                        haptics.perform(WalletHaptic.Success)
-                        onScanned(decoded)
-                    }
-                } else {
-                    completedScan = true
-                    animatedUrDecoder.reset()
-                    haptics.perform(WalletHaptic.Success)
-                    onScanned(trimmed)
-                }
+                completedScan = true
+                haptics.perform(WalletHaptic.Success)
+                onScanned(decoded)
+            },
+            onAnimatedProgress = { progress, error ->
+                animatedProgress = progress
+                animatedError = error
             },
             onError = { error -> cameraError = error },
         )
@@ -456,19 +457,131 @@ private fun ScannerTopBar(
     }
 }
 
+internal sealed interface ScannerFrameOutcome {
+    data class Progress(
+        val sessionId: Int,
+        val progress: Float,
+        val errorMessage: String?,
+    ) : ScannerFrameOutcome
+
+    data class Completed(
+        val sessionId: Int,
+        val content: String,
+    ) : ScannerFrameOutcome
+}
+
+internal class ScannerFrameProcessor {
+    private var completedSessionId: Int? = null
+
+    fun process(
+        sessionId: Int,
+        rawCode: String,
+        decoder: AnimatedUrDecoder,
+    ): ScannerFrameOutcome? = process(
+        sessionId = sessionId,
+        rawCode = rawCode,
+        receiveUrPart = decoder::receivePart,
+        resetUrDecoder = decoder::reset,
+    )
+
+    internal fun process(
+        sessionId: Int,
+        rawCode: String,
+        receiveUrPart: (String) -> AnimatedUrDecodeUpdate,
+        resetUrDecoder: () -> Unit,
+    ): ScannerFrameOutcome? {
+        if (completedSessionId == sessionId) return null
+        val trimmed = rawCode.trim()
+        return if (trimmed.startsWith("ur:", ignoreCase = true)) {
+            val update = receiveUrPart(trimmed)
+            if (update.content != null) {
+                completedSessionId = sessionId
+                ScannerFrameOutcome.Completed(sessionId = sessionId, content = update.content)
+            } else {
+                ScannerFrameOutcome.Progress(
+                    sessionId = sessionId,
+                    progress = update.progress,
+                    errorMessage = update.errorMessage,
+                )
+            }
+        } else {
+            completedSessionId = sessionId
+            resetUrDecoder()
+            ScannerFrameOutcome.Completed(sessionId = sessionId, content = trimmed)
+        }
+    }
+}
+
+private data class ActiveAnalysisSession(
+    val sessionId: Int,
+    val decoder: AnimatedUrDecoder,
+)
+
+private class CameraBindingState {
+    var boundProvider: ProcessCameraProvider? = null
+    var imageAnalysis: ImageAnalysis? = null
+    var analyzer: BarcodeAnalyzer? = null
+    var isDisposed: Boolean = false
+}
+
 @Composable
 private fun CameraPreviewScanner(
+    sessionId: Int,
+    animatedUrDecoder: AnimatedUrDecoder,
     onCode: (String) -> Unit,
+    onAnimatedProgress: (Float, String?) -> Unit,
     onError: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
     val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
+    val safeAnalysisExecutor = remember(analysisExecutor) {
+        Executor { command ->
+            if (!analysisExecutor.isShutdown) {
+                runCatching { analysisExecutor.execute(command) }
+            }
+        }
+    }
+    val bindingState = remember { CameraBindingState() }
+    val frameProcessor = remember { ScannerFrameProcessor() }
+
+    // Keep callbacks current across rapid close→reopen cycles during the
+    // overlay's exit animation, when AndroidView(factory = ...) does not rerun.
+    val currentOnCode by rememberUpdatedState(onCode)
+    val currentOnAnimatedProgress by rememberUpdatedState(onAnimatedProgress)
+    val currentOnError by rememberUpdatedState(onError)
+
+    val activeSessionRef = remember {
+        AtomicReference(ActiveAnalysisSession(sessionId, animatedUrDecoder))
+    }
+    SideEffect {
+        val current = activeSessionRef.get()
+        if (current.sessionId != sessionId || current.decoder !== animatedUrDecoder) {
+            activeSessionRef.set(ActiveAnalysisSession(sessionId, animatedUrDecoder))
+        }
+    }
 
     DisposableEffect(Unit) {
         onDispose {
-            runCatching { cameraProviderFuture.get().unbindAll() }
+            bindingState.isDisposed = true
+            runCatching { bindingState.imageAnalysis?.clearAnalyzer() }
+            bindingState.imageAnalysis = null
+            runCatching { bindingState.boundProvider?.unbindAll() }
+            bindingState.boundProvider = null
+            val analyzer = bindingState.analyzer
+            bindingState.analyzer = null
+            if (analyzer != null) {
+                analyzer.markClosed()
+                val closedOnExecutor = runCatching {
+                    analysisExecutor.execute {
+                        runCatching { analyzer.close() }
+                    }
+                }.isSuccess
+                if (!closedOnExecutor) {
+                    runCatching { analyzer.close() }
+                }
+            }
             analysisExecutor.shutdown()
         }
     }
@@ -482,28 +595,70 @@ private fun CameraPreviewScanner(
             val mainExecutor = ContextCompat.getMainExecutor(viewContext)
             cameraProviderFuture.addListener(
                 {
+                    if (bindingState.isDisposed) return@addListener
                     runCatching {
                         val cameraProvider = cameraProviderFuture.get()
+                        if (bindingState.isDisposed) return@addListener
+                        bindingState.boundProvider = cameraProvider
                         val preview = Preview.Builder().build().also {
                             it.setSurfaceProvider(previewView.surfaceProvider)
                         }
-                        val analyzer = ImageAnalysis.Builder()
+                        val barcodeAnalyzer = BarcodeAnalyzer(
+                            callbackExecutor = safeAnalysisExecutor,
+                            onCode = { rawCode ->
+                                val activeSession = activeSessionRef.get()
+                                when (
+                                    val outcome = frameProcessor.process(
+                                        sessionId = activeSession.sessionId,
+                                        rawCode = rawCode,
+                                        decoder = activeSession.decoder,
+                                    )
+                                ) {
+                                    is ScannerFrameOutcome.Progress -> {
+                                        mainExecutor.execute {
+                                            if (!bindingState.isDisposed &&
+                                                activeSessionRef.get().sessionId == outcome.sessionId
+                                            ) {
+                                                currentOnAnimatedProgress(
+                                                    outcome.progress,
+                                                    outcome.errorMessage,
+                                                )
+                                            }
+                                        }
+                                    }
+                                    is ScannerFrameOutcome.Completed -> {
+                                        mainExecutor.execute {
+                                            if (!bindingState.isDisposed &&
+                                                activeSessionRef.get().sessionId == outcome.sessionId
+                                            ) {
+                                                currentOnAnimatedProgress(1f, null)
+                                                currentOnCode(outcome.content)
+                                            }
+                                        }
+                                    }
+                                    null -> Unit
+                                }
+                            },
+                        )
+                        bindingState.analyzer = barcodeAnalyzer
+                        val imageAnalysis = ImageAnalysis.Builder()
                             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                             .build()
                             .also {
-                                it.setAnalyzer(analysisExecutor, BarcodeAnalyzer { code ->
-                                    mainExecutor.execute { onCode(code) }
-                                })
+                                it.setAnalyzer(analysisExecutor, barcodeAnalyzer)
                             }
+                        bindingState.imageAnalysis = imageAnalysis
                         cameraProvider.unbindAll()
                         cameraProvider.bindToLifecycle(
                             lifecycleOwner,
                             CameraSelector.DEFAULT_BACK_CAMERA,
                             preview,
-                            analyzer,
+                            imageAnalysis,
                         )
                     }.onFailure { error ->
-                        onError(error.message ?: "Unable to start the camera.")
+                        if (!bindingState.isDisposed) {
+                            currentOnError(error.message ?: "Unable to start the camera.")
+                        }
                     }
                 },
                 mainExecutor,
@@ -514,12 +669,31 @@ private fun CameraPreviewScanner(
 }
 
 private class BarcodeAnalyzer(
+    private val callbackExecutor: Executor,
     private val onCode: (String) -> Unit,
 ) : ImageAnalysis.Analyzer {
-    private val scanner = BarcodeScanning.getClient()
+    private val closed = AtomicBoolean(false)
+    private val scanner = BarcodeScanning.getClient(
+        BarcodeScannerOptions.Builder()
+            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+            .build(),
+    )
+
+    fun markClosed() {
+        closed.set(true)
+    }
+
+    fun close() {
+        closed.set(true)
+        scanner.close()
+    }
 
     @ExperimentalGetImage
     override fun analyze(imageProxy: ImageProxy) {
+        if (closed.get()) {
+            imageProxy.close()
+            return
+        }
         val mediaImage = imageProxy.image
         if (mediaImage == null) {
             imageProxy.close()
@@ -527,8 +701,10 @@ private class BarcodeAnalyzer(
         }
         val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
         scanner.process(image)
-            .addOnSuccessListener { barcodes ->
-                barcodes.firstNotNullOfOrNull { it.rawValue }?.let(onCode)
+            .addOnSuccessListener(callbackExecutor) { barcodes ->
+                if (!closed.get()) {
+                    barcodes.firstNotNullOfOrNull { it.rawValue }?.let(onCode)
+                }
             }
             .addOnCompleteListener {
                 imageProxy.close()

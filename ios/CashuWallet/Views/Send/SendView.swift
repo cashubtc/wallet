@@ -918,14 +918,32 @@ struct SendView: View {
     }
 
     private func lockQuickFills() -> [ScannerWrapperView.ScannerQuickFill] {
+        Self.makeLockQuickFills(
+            showQuickLockToMyKey: settings.showP2PKButtonInDrawer,
+            primaryPublicKey: settings.primaryP2PKPublicKey,
+            hasClipboardStrings: UIPasteboard.general.hasStrings,
+            readClipboard: { UIPasteboard.general.string }
+        )
+    }
+
+    /// Builds lock-scanner quick-fill chips without reading clipboard text on
+    /// scanner open. Checking `UIPasteboard.general.hasStrings` avoids triggering
+    /// iOS's system paste permission sheet until the user explicitly taps Paste.
+    static func makeLockQuickFills(
+        showQuickLockToMyKey: Bool,
+        primaryPublicKey: String?,
+        hasClipboardStrings: Bool,
+        readClipboard: @escaping () -> String?
+    ) -> [ScannerWrapperView.ScannerQuickFill] {
         var fills: [ScannerWrapperView.ScannerQuickFill] = []
         // "Lock to my key" is opt-in via Settings → Locked Ecash → Quick lock to my key.
-        if settings.showP2PKButtonInDrawer, let myKey = settings.primaryP2PKPublicKey {
+        if showQuickLockToMyKey, let myKey = primaryPublicKey {
             fills.append(.init(title: "Lock to my key", systemImage: "key.fill", value: myKey))
         }
-        if let clip = UIPasteboard.general.string?.trimmingCharacters(in: .whitespacesAndNewlines),
-           Self.normalizeP2PKPubkey(clip) != nil {
-            fills.append(.init(title: "Paste key", systemImage: "doc.on.clipboard", value: clip))
+        if hasClipboardStrings {
+            fills.append(.init(title: "Paste key", systemImage: "doc.on.clipboard") {
+                readClipboard()?.trimmingCharacters(in: .whitespacesAndNewlines)
+            })
         }
         return fills
     }
