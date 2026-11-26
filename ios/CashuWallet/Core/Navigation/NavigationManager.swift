@@ -183,45 +183,45 @@ final class NavigationManager: ObservableObject {
 
     // MARK: Home-scanner intake
 
-    /// Judge a payload scanned on the home scanner: junk is rejected inline
-    /// (the scanner shows the error and re-arms), a mint URL is copied and
-    /// confirmed, everything routable is accepted. The clipboard copy lives
-    /// here so the notice and its side effect can't diverge.
-    func classifyScannedPayload(_ content: String, walletManager: WalletManager) -> ScanIntake {
-        switch ScanRouter.route(
+    /// Classify and route a payload scanned on the home scanner in a single
+    /// `ScanRouter.route` pass: junk is rejected inline (the scanner shows the
+    /// error and re-arms), a mint URL is copied and confirmed, and routable
+    /// payloads park their destination for presentation once the scanner sheet
+    /// finishes dismissing (Android scanner parity).
+    func handleScannedPayload(_ content: String, walletManager: WalletManager) -> ScanIntake {
+        handleScannedPayload(
             content,
             routeForCashuPaymentRequest: walletManager.routeForCashuPaymentRequest
+        )
+    }
+
+    func handleScannedPayload(
+        _ content: String,
+        routeForCashuPaymentRequest: (CashuPaymentRequestSummary, String) -> CashuRequestRoute,
+        copyMintURL: (String) -> Void = { UIPasteboard.general.string = $0 }
+    ) -> ScanIntake {
+        switch ScanRouter.route(
+            content,
+            routeForCashuPaymentRequest: routeForCashuPaymentRequest
         ) {
         // An invoice no mint can pay as it stands is accepted too: the payment
         // sheet explains why, with the Transfer that fixes it when one can.
-        case .send, .receiveToken, .cashuRequestPay:
+        case .receiveToken(let token):
+            present(.cover(.receiveToken(token)))
+            return .accept
+        case .cashuRequestPay(let summary):
+            present(.sheet(.cashuRequestPay(summary)))
+            return .accept
+        case .send(let destination, let explanation):
+            present(.sheet(.sendAmount(destination, explanation: explanation)))
             return .accept
         case .mintURL(let url):
-            UIPasteboard.general.string = url
+            copyMintURL(url)
             return .notice(message: "Mint URL copied to clipboard")
         case .unrecognized:
             return .reject(
                 message: "This QR code isn't a payment code we recognize. Scan a Lightning invoice, ecash token, or Cashu Request."
             )
-        }
-    }
-
-    /// Route an accepted home-scan payload. The scanner sheet is still up
-    /// when this fires, so `present` always parks — the scanner closes
-    /// first, then the result surface presents (Android scanner parity).
-    func routeScannedPayload(_ content: String, walletManager: WalletManager) {
-        switch ScanRouter.route(
-            content,
-            routeForCashuPaymentRequest: walletManager.routeForCashuPaymentRequest
-        ) {
-        case .receiveToken(let token):
-            present(.cover(.receiveToken(token)))
-        case .cashuRequestPay(let summary):
-            present(.sheet(.cashuRequestPay(summary)))
-        case .send(let destination, let explanation):
-            present(.sheet(.sendAmount(destination, explanation: explanation)))
-        case .mintURL, .unrecognized:
-            break   // resolved inline by `classifyScannedPayload`
         }
     }
 }

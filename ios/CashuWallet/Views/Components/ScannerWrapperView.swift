@@ -1,8 +1,100 @@
 import SwiftUI
 import AVFoundation
 import Cdk
+import os
 
-class ScannerViewModel: ObservableObject {
+enum ScannerFrameOutcome: Equatable, Sendable {
+    case progress(Double, generation: UInt64)
+    case frameError(String, generation: UInt64)
+    case completed(String, fromAnimatedUR: Bool, generation: UInt64)
+
+    var generation: UInt64 {
+        switch self {
+        case .progress(_, let generation),
+             .frameError(_, let generation),
+             .completed(_, _, let generation):
+            return generation
+        }
+    }
+}
+
+/// Decodes QR payloads (including NUT-16 `ur:` animated sequences via CDK's
+/// `TokenUrDecoder`). Confined to `ScannerViewModel.metadataQueue` so CDK FFI
+/// never runs on the main thread; `@unchecked Sendable` reflects that
+/// serial-queue confinement.
+final class ScannerFrameProcessor: @unchecked Sendable {
+    private var decoder: TokenUrDecoder?
+    private var isAcceptingFrames = true
+    private var generation: UInt64 = 0
+
+    func reset(generation: UInt64) {
+        self.generation = generation
+        decoder = nil
+        isAcceptingFrames = true
+    }
+
+    func disarm() {
+        isAcceptingFrames = false
+    }
+
+    func process(code: String) -> ScannerFrameOutcome? {
+        guard isAcceptingFrames else { return nil }
+        let content = code.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if content.lowercased().hasPrefix("ur:") {
+            let activeDecoder: TokenUrDecoder
+            if let existing = decoder {
+                activeDecoder = existing
+            } else {
+                let created = TokenUrDecoder()
+                decoder = created
+                activeDecoder = created
+            }
+
+            do {
+                try activeDecoder.receive(part: content)
+            } catch {
+                return .frameError("Couldn't read that animated QR frame.", generation: generation)
+            }
+
+            let total = activeDecoder.fragmentCount()
+            let progress: Double?
+            if total > 0, let resolved = activeDecoder.resolvedFragmentCount() {
+                progress = min(Double(resolved) / Double(total), 0.99)
+            } else {
+                progress = nil
+            }
+
+            guard activeDecoder.complete() else {
+                return progress.map { .progress($0, generation: generation) }
+            }
+
+            do {
+                guard let token = try activeDecoder.token() else {
+                    return progress.map { .progress($0, generation: generation) }
+                }
+                let encoded = token.encode()
+                isAcceptingFrames = false
+                return .completed(encoded, fromAnimatedUR: true, generation: generation)
+            } catch {
+                return .frameError("That animated QR doesn't contain a Cashu token.", generation: generation)
+            }
+        } else {
+            decoder = nil
+            isAcceptingFrames = false
+            return .completed(content, fromAnimatedUR: false, generation: generation)
+        }
+    }
+}
+
+@MainActor
+final class ScannerViewModel: ObservableObject {
+    struct CompletedScan: Equatable, Sendable {
+        let id = UUID()
+        let content: String
+        let fromAnimatedUR: Bool
+    }
+
     @Published var scanProgress: Double = 0
     @Published var isScanning = true
     @Published var errorMessage: String?
@@ -12,56 +104,124 @@ class ScannerViewModel: ObservableObject {
     // Caution, not error: a QR that isn't what we wanted didn't break
     // anything. Genuine failures raise this explicitly.
     @Published var noticeSeverity: ErrorSeverity = .caution
+    @Published private(set) var completedScan: CompletedScan?
 
-    /// NUT-16 animated-QR decoder from CDK: fountain-coded `ur:bytes` frames
-    /// arrive in any order and reassemble into a Cashu token.
-    private var decoder = TokenUrDecoder()
+    /// Dedicated serial background queue for `AVCaptureMetadataOutput` callbacks
+    /// and `TokenUrDecoder` FFI decoding so neither runs on Main.
+    nonisolated let metadataQueue = DispatchQueue(
+        label: "com.cashu.me.qr-scanner-metadata",
+        qos: .userInitiated
+    )
+
+    /// Confined to `metadataQueue`.
+    private nonisolated let processor = ScannerFrameProcessor()
+    private var scanGeneration: UInt64 = 0
+    private var scheduledTask: Task<Void, Never>?
 
     func reset() {
-        decoder = TokenUrDecoder()
+        scheduledTask?.cancel()
+        scheduledTask = nil
+        scanGeneration &+= 1
+        let generation = scanGeneration
         scanProgress = 0
         isScanning = true
         errorMessage = nil
         noticeSeverity = .caution
+        completedScan = nil
+        let processor = self.processor
+        metadataQueue.async {
+            processor.reset(generation: generation)
+        }
     }
 
-    func processFragment(_ fragment: String) -> String? {
-        do {
-            try decoder.receive(part: fragment)
-        } catch {
-            DispatchQueue.main.async {
-                self.errorMessage = "Couldn't read that animated QR frame."
-            }
-            return nil
+    func disarm() {
+        scheduledTask?.cancel()
+        scheduledTask = nil
+        scanGeneration &+= 1
+        isScanning = false
+        let processor = self.processor
+        metadataQueue.async {
+            processor.disarm()
         }
+    }
 
-        DispatchQueue.main.async {
-            let total = self.decoder.fragmentCount()
-            if total > 0, let resolved = self.decoder.resolvedFragmentCount() {
-                self.scanProgress = min(Double(resolved) / Double(total), 0.99)
+    func scheduleReset(after duration: Duration) {
+        scheduledTask?.cancel()
+        scheduledTask = Task { [weak self] in
+            try? await Task.sleep(for: duration)
+            guard !Task.isCancelled else { return }
+            self?.reset()
+        }
+    }
+
+    func scheduleDismiss(after duration: Duration, action: @escaping @MainActor () -> Void) {
+        scheduledTask?.cancel()
+        scheduledTask = Task {
+            try? await Task.sleep(for: duration)
+            guard !Task.isCancelled else { return }
+            action()
+        }
+    }
+
+    func cancelScheduledTasks() {
+        scheduledTask?.cancel()
+        scheduledTask = nil
+    }
+
+    /// Invoked directly on `metadataQueue` by `AVCaptureMetadataOutput`; runs
+    /// `TokenUrDecoder` FFI off Main and dispatches only UI updates to Main.
+    nonisolated func handleMetadataCode(_ code: String) {
+        guard let outcome = processor.process(code: code) else { return }
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                self?.apply(outcome)
             }
         }
+    }
 
-        guard decoder.complete() else { return nil }
-
-        do {
-            guard let token = try decoder.token() else { return nil }
-            return token.encode()
-        } catch {
-            DispatchQueue.main.async {
-                self.errorMessage = "That animated QR doesn't contain a Cashu token."
-            }
-            return nil
+    private func apply(_ outcome: ScannerFrameOutcome) {
+        guard outcome.generation == scanGeneration else { return }
+        switch outcome {
+        case .progress(let progress, _):
+            scanProgress = progress
+            errorMessage = nil
+        case .frameError(let message, _):
+            noticeSeverity = .caution
+            errorMessage = message
+        case .completed(let content, let fromAnimatedUR, _):
+            guard isScanning else { return }
+            completedScan = CompletedScan(content: content, fromAnimatedUR: fromAnimatedUR)
         }
     }
 }
 
-private enum CameraAuthorizationState: Equatable {
+enum CameraAuthorizationState: Equatable, Sendable {
     case checking
     case requesting
     case authorized
     case denied
     case restricted
+
+    static func from(
+        authorizationStatus: AVAuthorizationStatus,
+        usesTestCamera: Bool = false
+    ) -> CameraAuthorizationState {
+        if usesTestCamera {
+            return .authorized
+        }
+        switch authorizationStatus {
+        case .authorized:
+            return .authorized
+        case .notDetermined:
+            return .checking
+        case .denied:
+            return .denied
+        case .restricted:
+            return .restricted
+        @unknown default:
+            return .restricted
+        }
+    }
 }
 
 private struct ScannerCameraStatusView: View {
@@ -121,47 +281,90 @@ struct ScannerWrapperView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
 
-    /// Delivers an accepted payload to the caller. The scanner then dismisses
-    /// itself — it never presents the follow-up surface, so it can never be
-    /// left open underneath one.
-    var onScanned: (String) -> Void
+    /// Handles a scanned or quick-filled payload in a single pass. `.accept`
+    /// dismisses the scanner; `.reject` shows the message inline and re-arms
+    /// (junk QR stays scannable); `.notice` shows a neutral toast and closes
+    /// (any side effect, e.g. copying a mint URL, belongs to the handler).
+    private let handleIntake: (String) -> ScanIntake
 
     /// Optional override for the instruction shown under the viewfinder.
-    var promptText: String? = nil
+    private let promptText: String?
 
-    /// Optional gate run before a payload is delivered. `.accept` hands it to
-    /// `onScanned` and self-dismisses; `.reject` shows the message inline and
-    /// re-arms (junk QR stays scannable); `.notice` shows a neutral toast and
-    /// closes without delivering (any side effect, e.g. copying a mint URL,
-    /// belongs to the classifier). Nil accepts everything.
-    var classify: ((String) -> ScanIntake)? = nil
-
-    /// Optional quick-fill chips rendered over the camera (e.g. "Paste",
-    /// "Use my latest key"). Tapping one routes its `value` through the same
-    /// pipeline as a scanned code. Evaluated once on appear so the caller can
-    /// read the clipboard lazily — only when the scanner is actually shown.
-    var quickFills: (() -> [ScannerQuickFill])? = nil
+    /// Optional quick-fill chips rendered over the camera (e.g. "Lock to my
+    /// key", "Paste key"). Evaluated on appear (and foreground return) using
+    /// presence checks only; each chip resolves its payload lazily on tap so
+    /// opening the scanner never reads the clipboard.
+    private let quickFills: (() -> [ScannerQuickFill])?
 
     struct ScannerQuickFill: Identifiable {
         let id = UUID()
         let title: String
         let systemImage: String
-        let value: String
+        let resolveValue: () -> String?
+
+        init(title: String, systemImage: String, value: String) {
+            self.title = title
+            self.systemImage = systemImage
+            self.resolveValue = { value }
+        }
+
+        init(title: String, systemImage: String, resolveValue: @escaping () -> String?) {
+            self.title = title
+            self.systemImage = systemImage
+            self.resolveValue = resolveValue
+        }
     }
 
     @StateObject private var scannerModel = ScannerViewModel()
     @State private var resolvedQuickFills: [ScannerQuickFill] = []
-    @State private var cameraAuthorizationState: CameraAuthorizationState = .checking
+    @State private var cameraAuthorizationState: CameraAuthorizationState
     @State private var cameraFailureMessage: String?
 
-    private var usesTestCamera: Bool {
+    private static var defaultUsesTestCamera: Bool {
         #if DEBUG
         IntegrationTestConfig.shouldUseDeterministicUIRuntime
         #else
         false
         #endif
     }
-    
+
+    private var usesTestCamera: Bool { Self.defaultUsesTestCamera }
+
+    init(
+        onScanned: @escaping (String) -> Void,
+        promptText: String? = nil,
+        quickFills: (() -> [ScannerQuickFill])? = nil
+    ) {
+        self.handleIntake = { content in
+            onScanned(content)
+            return .accept
+        }
+        self.promptText = promptText
+        self.quickFills = quickFills
+        _cameraAuthorizationState = State(
+            initialValue: CameraAuthorizationState.from(
+                authorizationStatus: AVCaptureDevice.authorizationStatus(for: .video),
+                usesTestCamera: Self.defaultUsesTestCamera
+            )
+        )
+    }
+
+    init(
+        onIntake: @escaping (String) -> ScanIntake,
+        promptText: String? = nil,
+        quickFills: (() -> [ScannerQuickFill])? = nil
+    ) {
+        self.handleIntake = onIntake
+        self.promptText = promptText
+        self.quickFills = quickFills
+        _cameraAuthorizationState = State(
+            initialValue: CameraAuthorizationState.from(
+                authorizationStatus: AVCaptureDevice.authorizationStatus(for: .video),
+                usesTestCamera: Self.defaultUsesTestCamera
+            )
+        )
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -188,8 +391,9 @@ struct ScannerWrapperView: View {
                         Text("Camera Ready").foregroundStyle(.white)
                     } else {
                         LegacyQRScannerView(
-                            onResult: { code in
-                                handleScan(code: code)
+                            metadataQueue: scannerModel.metadataQueue,
+                            onResult: { [scannerModel] code in
+                                scannerModel.handleMetadataCode(code)
                             },
                             onFailure: { error in
                                 cameraFailureMessage = error
@@ -252,7 +456,11 @@ struct ScannerWrapperView: View {
                                 ForEach(resolvedQuickFills) { fill in
                                     Button {
                                         HapticFeedback.selection()
-                                        processCompleteContent(fill.value)
+                                        guard let value = fill.resolveValue()?.trimmingCharacters(in: .whitespacesAndNewlines),
+                                              !value.isEmpty else {
+                                            return
+                                        }
+                                        processCompleteContent(value)
                                     } label: {
                                         HStack(spacing: 8) {
                                             Image(systemName: fill.systemImage)
@@ -316,40 +524,44 @@ struct ScannerWrapperView: View {
                 resolvedQuickFills = quickFills?() ?? []
                 refreshCameraAuthorization()
             }
+            .onDisappear {
+                scannerModel.cancelScheduledTasks()
+            }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active {
+                    resolvedQuickFills = quickFills?() ?? []
                     refreshCameraAuthorization()
                 }
+            }
+            .onChange(of: scannerModel.completedScan) { _, completed in
+                guard let completed else { return }
+                if completed.fromAnimatedUR {
+                    let generator = UIImpactFeedbackGenerator(style: .medium)
+                    generator.impactOccurred()
+                }
+                processCompleteContent(completed.content)
             }
         }
     }
 
     private func refreshCameraAuthorization() {
-        if usesTestCamera {
-            cameraAuthorizationState = .authorized
-            return
-        }
-        switch AVCaptureDevice.authorizationStatus(for: .video) {
-        case .authorized:
-            cameraAuthorizationState = .authorized
-        case .notDetermined:
+        let nextState = CameraAuthorizationState.from(
+            authorizationStatus: AVCaptureDevice.authorizationStatus(for: .video),
+            usesTestCamera: usesTestCamera
+        )
+        if nextState == .checking {
             requestCameraAuthorization()
-        case .denied:
-            cameraAuthorizationState = .denied
-        case .restricted:
-            cameraAuthorizationState = .restricted
-        @unknown default:
-            cameraAuthorizationState = .restricted
+        } else {
+            cameraAuthorizationState = nextState
         }
     }
 
     private func requestCameraAuthorization() {
         guard cameraAuthorizationState != .requesting else { return }
         cameraAuthorizationState = .requesting
-        AVCaptureDevice.requestAccess(for: .video) { granted in
-            DispatchQueue.main.async {
-                cameraAuthorizationState = granted ? .authorized : .denied
-            }
+        Task { @MainActor in
+            let granted = await AVCaptureDevice.requestAccess(for: .video)
+            cameraAuthorizationState = granted ? .authorized : .denied
         }
     }
 
@@ -363,48 +575,27 @@ struct ScannerWrapperView: View {
         refreshCameraAuthorization()
     }
 
-    private func handleScan(code: String) {
-        guard scannerModel.isScanning else { return }
-        
-        let content = code.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        // UR Format Handling
-        if content.lowercased().hasPrefix("ur:") {
-            if let result = scannerModel.processFragment(content) {
-                // Success!
-                let generator = UIImpactFeedbackGenerator(style: .medium)
-                generator.impactOccurred()
-                processCompleteContent(result)
-            }
-        } else {
-            // Standard QR
-            processCompleteContent(content)
-        }
-    }
-    
     private func processCompleteContent(_ content: String) {
-        scannerModel.isScanning = false
+        guard scannerModel.isScanning else { return }
+        scannerModel.disarm()
 
-        switch classify?(content) ?? .accept {
+        switch handleIntake(content) {
         case .accept:
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.success)
-            onScanned(content)
             dismiss()
         case .reject(let message):
             scannerModel.errorMessage = message
             HapticFeedback.notification(.error)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                scannerModel.reset()
-            }
+            scannerModel.scheduleReset(after: .seconds(2))
         case .notice(let message):
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.success)
             // A confirmation, not a failure — render it on a neutral toast.
             scannerModel.noticeSeverity = .info
             scannerModel.errorMessage = message
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                self.dismiss()
+            scannerModel.scheduleDismiss(after: .milliseconds(1500)) {
+                dismiss()
             }
         }
     }
@@ -1275,136 +1466,307 @@ struct CashuPaymentRequestPayView: View {
 }
 
 struct LegacyQRScannerView: UIViewControllerRepresentable {
-    var onResult: (String) -> Void
-    var onFailure: (String) -> Void
+    var metadataQueue: DispatchQueue
+    var onResult: @Sendable (String) -> Void
+    var onFailure: @MainActor (String) -> Void
     /// Fires every time the camera surface (re)appears — including the cases
     /// SwiftUI can't see: cancelled interactive dismissals and stacked covers
     /// closing. Callers use it to re-arm scan intake.
-    var onAppear: () -> Void
+    var onAppear: @MainActor () -> Void
 
     func makeUIViewController(context: Context) -> QRScannerViewController {
-        let controller = QRScannerViewController()
+        let controller = QRScannerViewController(metadataQueue: metadataQueue)
         controller.delegate = context.coordinator
         return controller
     }
 
     func updateUIViewController(_ uiViewController: QRScannerViewController, context: Context) {
-        context.coordinator.onResult = onResult
-        context.coordinator.onFailure = onFailure
-        context.coordinator.onAppear = onAppear
+        context.coordinator.update(
+            onResult: onResult,
+            onFailure: onFailure,
+            onAppear: onAppear
+        )
     }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(onResult: onResult, onFailure: onFailure, onAppear: onAppear)
     }
 
-    class Coordinator: NSObject, QRScannerViewControllerDelegate {
-        var onResult: (String) -> Void
-        var onFailure: (String) -> Void
-        var onAppear: () -> Void
+    private struct MetadataHandlerBox: Sendable {
+        var handler: @Sendable (String) -> Void
+    }
 
-        init(onResult: @escaping (String) -> Void, onFailure: @escaping (String) -> Void, onAppear: @escaping () -> Void) {
-            self.onResult = onResult
+    final class Coordinator: NSObject, QRScannerViewControllerDelegate, @unchecked Sendable {
+        private let onResultLock: OSAllocatedUnfairLock<MetadataHandlerBox>
+        @MainActor private var onFailure: (String) -> Void
+        @MainActor private var onAppear: () -> Void
+
+        @MainActor
+        init(
+            onResult: @escaping @Sendable (String) -> Void,
+            onFailure: @escaping @MainActor (String) -> Void,
+            onAppear: @escaping @MainActor () -> Void
+        ) {
+            self.onResultLock = OSAllocatedUnfairLock(initialState: MetadataHandlerBox(handler: onResult))
             self.onFailure = onFailure
             self.onAppear = onAppear
         }
 
-        func didFound(code: String) {
-            onResult(code)
+        @MainActor
+        func update(
+            onResult: @escaping @Sendable (String) -> Void,
+            onFailure: @escaping @MainActor (String) -> Void,
+            onAppear: @escaping @MainActor () -> Void
+        ) {
+            onResultLock.withLock { $0.handler = onResult }
+            self.onFailure = onFailure
+            self.onAppear = onAppear
         }
 
-        func didFail(error: String) {
+        nonisolated func didFound(code: String) {
+            let handler = onResultLock.withLock { $0.handler }
+            handler(code)
+        }
+
+        @MainActor func didFail(error: String) {
             onFailure(error)
         }
 
-        func scannerDidAppear() {
+        @MainActor func scannerDidAppear() {
             onAppear()
         }
     }
 }
 
-protocol QRScannerViewControllerDelegate: AnyObject {
-    func didFound(code: String)
-    func didFail(error: String)
-    func scannerDidAppear()
+protocol QRScannerViewControllerDelegate: AnyObject, Sendable {
+    nonisolated func didFound(code: String)
+    @MainActor func didFail(error: String)
+    @MainActor func scannerDidAppear()
 }
 
-class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
-    weak var delegate: QRScannerViewControllerDelegate?
-    var captureSession: AVCaptureSession!
-    var previewLayer: AVCaptureVideoPreviewLayer!
-    var qrCodeFrameView: UIView?
+private struct WeakScannerDelegateBox: @unchecked Sendable {
+    weak var value: (any QRScannerViewControllerDelegate)?
+}
+
+private struct FrameBoundsHandlerBox: Sendable {
+    var handler: (@MainActor @Sendable (CGRect?) -> Void)?
+}
+
+/// Owns `AVCaptureSession` configuration and start/stop lifecycle off the main
+/// thread. All capture-session mutations execute serially on `sessionQueue`,
+/// while `AVCaptureMetadataOutput` delivers callbacks on `metadataQueue`.
+private final class CaptureSessionController: NSObject, AVCaptureMetadataOutputObjectsDelegate, @unchecked Sendable {
+    let captureSession = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "com.cashu.me.qr-scanner-session", qos: .userInitiated)
-    private var isSessionConfigured = false
-    
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        
-        view.backgroundColor = UIColor.black
-        captureSession = AVCaptureSession()
-        
-        guard let videoCaptureDevice = AVCaptureDevice.default(for: .video) else { // Changed to .video
-            delegate?.didFail(error: "Your device doesn't support video capture.")
-            return
+    private let metadataQueue: DispatchQueue
+    private let desiredRunning = OSAllocatedUnfairLock(initialState: false)
+    private let onFrameBoundsLock = OSAllocatedUnfairLock(initialState: FrameBoundsHandlerBox(handler: nil))
+    private let onMetadata: @Sendable (String) -> Void
+
+    // Accessed exclusively on `sessionQueue`.
+    private var isConfigured = false
+
+    // Accessed exclusively on `metadataQueue`.
+    private var hasVisibleFrame = false
+
+    init(
+        metadataQueue: DispatchQueue,
+        onMetadata: @escaping @Sendable (String) -> Void
+    ) {
+        self.metadataQueue = metadataQueue
+        self.onMetadata = onMetadata
+        super.init()
+    }
+
+    func configure(
+        onConfigured: @escaping @MainActor @Sendable () -> Void,
+        onFrameBounds: @escaping @MainActor @Sendable (CGRect?) -> Void,
+        onFailure: @escaping @MainActor @Sendable (String) -> Void
+    ) {
+        onFrameBoundsLock.withLock { $0.handler = onFrameBounds }
+
+        sessionQueue.async { [weak self] in
+            guard let self, !isConfigured else { return }
+
+            captureSession.beginConfiguration()
+            let failureMessage = configureInputsAndOutputs()
+            captureSession.commitConfiguration()
+
+            if let failureMessage {
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        onFailure(failureMessage)
+                    }
+                }
+                return
+            }
+
+            isConfigured = true
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    onConfigured()
+                }
+            }
         }
-        
+    }
+
+    func setRunning(_ shouldRun: Bool) {
+        desiredRunning.withLock { $0 = shouldRun }
+        if shouldRun {
+            sessionQueue.async { [weak self] in
+                guard let self,
+                      isConfigured,
+                      desiredRunning.withLock({ $0 }),
+                      !captureSession.isRunning else { return }
+                captureSession.startRunning()
+            }
+        } else {
+            sessionQueue.async { [self] in
+                guard isConfigured,
+                      !desiredRunning.withLock({ $0 }),
+                      captureSession.isRunning else { return }
+                captureSession.stopRunning()
+            }
+        }
+    }
+
+    /// Runs exclusively on `sessionQueue` inside `beginConfiguration()` / `commitConfiguration()`.
+    private func configureInputsAndOutputs() -> String? {
+        guard let videoCaptureDevice = AVCaptureDevice.default(for: .video) else {
+            return "Your device doesn't support video capture."
+        }
+
         let videoInput: AVCaptureDeviceInput
-        
         do {
             videoInput = try AVCaptureDeviceInput(device: videoCaptureDevice)
         } catch {
-            delegate?.didFail(error: error.localizedDescription)
-            return
+            return error.localizedDescription
         }
-        
-        if (captureSession.canAddInput(videoInput)) {
-            captureSession.addInput(videoInput)
-        } else {
-            delegate?.didFail(error: "Could not add video input.")
-            return
+
+        guard captureSession.canAddInput(videoInput) else {
+            return "Could not add video input."
         }
-        
+        captureSession.addInput(videoInput)
+
         let metadataOutput = AVCaptureMetadataOutput()
-        
-        if (captureSession.canAddOutput(metadataOutput)) {
-            captureSession.addOutput(metadataOutput)
-            
-            metadataOutput.setMetadataObjectsDelegate(self, queue: DispatchQueue.main)
-            metadataOutput.metadataObjectTypes = [.qr]
-            isSessionConfigured = true
-        } else {
-            delegate?.didFail(error: "Could not add metadata output.")
-            return
+        guard captureSession.canAddOutput(metadataOutput) else {
+            return "Could not add metadata output."
         }
-        
-        previewLayer = AVCaptureVideoPreviewLayer(session: captureSession)
+        captureSession.addOutput(metadataOutput)
+        metadataOutput.setMetadataObjectsDelegate(self, queue: metadataQueue)
+
+        guard metadataOutput.availableMetadataObjectTypes.contains(.qr) else {
+            return "Your device doesn't support QR code scanning."
+        }
+        metadataOutput.metadataObjectTypes = [.qr]
+        return nil
+    }
+
+    func metadataOutput(
+        _ output: AVCaptureMetadataOutput,
+        didOutput metadataObjects: [AVMetadataObject],
+        from connection: AVCaptureConnection
+    ) {
+        if let readableObject = metadataObjects.first as? AVMetadataMachineReadableCodeObject,
+           let stringValue = readableObject.stringValue {
+            hasVisibleFrame = true
+            let normalizedBounds = readableObject.bounds
+            if let onFrameBounds = onFrameBoundsLock.withLock({ $0.handler }) {
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        onFrameBounds(normalizedBounds)
+                    }
+                }
+            }
+            onMetadata(stringValue)
+        } else if hasVisibleFrame {
+            hasVisibleFrame = false
+            if let onFrameBounds = onFrameBoundsLock.withLock({ $0.handler }) {
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        onFrameBounds(nil)
+                    }
+                }
+            }
+        }
+    }
+}
+
+class QRScannerViewController: UIViewController {
+    weak var delegate: (any QRScannerViewControllerDelegate)? {
+        didSet {
+            let current = delegate
+            metadataDelegate.withLock { $0.value = current }
+        }
+    }
+    var previewLayer: AVCaptureVideoPreviewLayer!
+    var qrCodeFrameView: UIView?
+
+    private let metadataDelegate: OSAllocatedUnfairLock<WeakScannerDelegateBox>
+    private nonisolated let sessionController: CaptureSessionController
+
+    init(metadataQueue: DispatchQueue) {
+        let delegateBox = OSAllocatedUnfairLock(initialState: WeakScannerDelegateBox())
+        self.metadataDelegate = delegateBox
+        self.sessionController = CaptureSessionController(
+            metadataQueue: metadataQueue,
+            onMetadata: { code in
+                delegateBox.withLock { $0.value }?.didFound(code: code)
+            }
+        )
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    deinit {
+        sessionController.setRunning(false)
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        view.backgroundColor = UIColor.black
+
+        // Attach the preview layer on Main immediately; session input/output
+        // configuration runs asynchronously on `sessionQueue`.
+        previewLayer = AVCaptureVideoPreviewLayer(session: sessionController.captureSession)
         previewLayer.frame = view.layer.bounds
         previewLayer.videoGravity = .resizeAspectFill
         view.layer.addSublayer(previewLayer)
-        
+
         // Initialize QR Code Frame View
-        qrCodeFrameView = UIView()
-        if let qrCodeFrameView = qrCodeFrameView {
-            qrCodeFrameView.layer.borderColor = UIColor.tintColor.cgColor
-            qrCodeFrameView.layer.borderWidth = 2
-            view.addSubview(qrCodeFrameView)
-            view.bringSubviewToFront(qrCodeFrameView)
-        }
-        
+        let frameView = UIView()
+        frameView.layer.borderColor = UIColor.tintColor.cgColor
+        frameView.layer.borderWidth = 2
+        view.addSubview(frameView)
+        view.bringSubviewToFront(frameView)
+        qrCodeFrameView = frameView
+
+        sessionController.configure(
+            onConfigured: { [weak self] in
+                self?.updatePreviewOrientation()
+            },
+            onFrameBounds: { [weak self] normalizedBounds in
+                self?.updateQRCodeFrame(normalizedBounds: normalizedBounds)
+            },
+            onFailure: { [weak self] error in
+                self?.delegate?.didFail(error: error)
+            }
+        )
     }
-    
+
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         if let previewLayer = previewLayer {
             previewLayer.frame = view.layer.bounds
         }
-        
-        // Ensure connection orientation matches
-        if let connection = previewLayer?.connection, connection.isVideoRotationAngleSupported(90) {
-            connection.videoRotationAngle = 90
-        }
+        updatePreviewOrientation()
     }
-    
+
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
 
@@ -1417,48 +1779,35 @@ class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsD
         // A cancelled interactive sheet dismissal fires viewWillDisappear (which
         // stops the session) and then viewWillAppear without reloading the view,
         // so the session must be restarted here or the preview stays frozen.
-        setCaptureSessionRunning(true)
+        sessionController.setRunning(true)
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
 
-        setCaptureSessionRunning(false)
+        sessionController.setRunning(false)
     }
 
-    private func setCaptureSessionRunning(_ shouldRun: Bool) {
-        guard isSessionConfigured else { return }
-        sessionQueue.async { [weak self] in
-            guard let self else { return }
-            if shouldRun, !captureSession.isRunning {
-                captureSession.startRunning()
-            } else if !shouldRun, captureSession.isRunning {
-                captureSession.stopRunning()
-            }
+    private func updatePreviewOrientation() {
+        if let connection = previewLayer?.connection, connection.isVideoRotationAngleSupported(90) {
+            connection.videoRotationAngle = 90
         }
     }
-    
-    func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput metadataObjects: [AVMetadataObject], from connection: AVCaptureConnection) {
-        if let metadataObject = metadataObjects.first {
-            guard let readableObject = metadataObject as? AVMetadataMachineReadableCodeObject else { return }
-            guard let stringValue = readableObject.stringValue else { return }
-            
-            // Transform the metadata object to the layer coordinates
-            if let barCodeObject = previewLayer?.transformedMetadataObject(for: readableObject) {
-                qrCodeFrameView?.frame = barCodeObject.bounds
-            }
-            
-            // Vibrate handled in view model/handling
-            delegate?.didFound(code: stringValue)
-        } else {
-             qrCodeFrameView?.frame = CGRect.zero
+
+    private func updateQRCodeFrame(normalizedBounds: CGRect?) {
+        guard let normalizedBounds else {
+            qrCodeFrameView?.frame = .zero
+            return
+        }
+        if let converted = previewLayer?.layerRectConverted(fromMetadataOutputRect: normalizedBounds) {
+            qrCodeFrameView?.frame = converted
         }
     }
-    
+
     override var prefersStatusBarHidden: Bool {
         return true
     }
-    
+
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
         return .portrait
     }

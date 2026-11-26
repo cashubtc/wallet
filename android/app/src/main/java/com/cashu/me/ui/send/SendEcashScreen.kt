@@ -1,5 +1,6 @@
 package com.cashu.me.ui.send
 
+import android.content.ClipboardManager
 import com.cashu.me.ui.components.PendingTokenClaimNotice
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -58,6 +59,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -70,6 +72,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.semantics.AccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsActions
@@ -735,10 +740,63 @@ private fun InputFace(
     }
 }
 
+internal enum class P2pkScannerQuickActionKind {
+    LockToMyKey,
+    PasteKey,
+}
+
+internal data class P2pkScannerQuickActionSpec(
+    val kind: P2pkScannerQuickActionKind,
+    val label: String,
+    val resolveKey: () -> String?,
+)
+
+internal fun hasClipboardText(
+    hasPrimaryClip: Boolean,
+    hasTextMimeType: Boolean,
+): Boolean = hasPrimaryClip && hasTextMimeType
+
+internal fun hasClipboardTextWithoutReading(
+    clipboardManager: ClipboardManager?,
+): Boolean {
+    if (clipboardManager == null) return false
+    val hasPrimaryClip = clipboardManager.hasPrimaryClip()
+    val hasTextMime = clipboardManager.primaryClipDescription?.hasMimeType("text/*") == true
+    return hasClipboardText(hasPrimaryClip = hasPrimaryClip, hasTextMimeType = hasTextMime)
+}
+
+internal fun p2pkScannerQuickActionSpecs(
+    showQuickLockToMyKey: Boolean,
+    primaryPublicKey: String?,
+    hasClipboardText: Boolean,
+    readClipboardText: () -> String?,
+): List<P2pkScannerQuickActionSpec> = buildList {
+    if (showQuickLockToMyKey && primaryPublicKey != null) {
+        add(
+            P2pkScannerQuickActionSpec(
+                kind = P2pkScannerQuickActionKind.LockToMyKey,
+                label = "Lock to my key",
+                resolveKey = { primaryPublicKey },
+            ),
+        )
+    }
+    if (hasClipboardText) {
+        add(
+            P2pkScannerQuickActionSpec(
+                kind = P2pkScannerQuickActionKind.PasteKey,
+                label = "Paste key",
+                resolveKey = { readClipboardText()?.trim()?.takeIf { it.isNotEmpty() } },
+            ),
+        )
+    }
+}
+
 /**
  * Quick actions for the full-screen P2PK key scanner the shell opens on this
  * sheet's behalf — the key shortcuts stay colocated with the flow. A selected
- * key takes the same return path as a scanned one.
+ * key takes the same return path as a scanned one. Uses a metadata-only
+ * clipboard presence check on open and reads clipboard text lazily on tap so
+ * Android 12+ never pops a paste toast when opening the camera.
  */
 @Composable
 internal fun rememberP2pkScannerQuickActions(
@@ -746,28 +804,39 @@ internal fun rememberP2pkScannerQuickActions(
     onSelectKey: (String) -> Unit,
 ): List<ScannerQuickAction> {
     val settings by settingsManager.state.collectAsState()
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val clipboard = LocalClipboardManager.current
+    val systemClipboard = remember(context) {
+        context.getSystemService(ClipboardManager::class.java)
+    }
     val haptics = rememberWalletHaptics()
     val primaryPublicKey = settingsManager.primaryP2PKKeyInfo()?.publicKey
-    val validClipboardText = clipboard.getText()?.text?.takeIf {
-        validateP2PKRecipientKey(it).normalizedKey != null
+    var clipboardHasText by remember(systemClipboard) {
+        mutableStateOf(hasClipboardTextWithoutReading(systemClipboard))
     }
-    return buildList {
-        if (settings.showP2PKButtonInDrawer && primaryPublicKey != null) {
-            add(
-                ScannerQuickAction("Lock to my key", Icons.Filled.Key) {
-                    haptics.perform(WalletHaptic.Selection)
-                    onSelectKey(primaryPublicKey)
-                },
-            )
+    DisposableEffect(lifecycleOwner, systemClipboard) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                clipboardHasText = hasClipboardTextWithoutReading(systemClipboard)
+            }
         }
-        if (validClipboardText != null) {
-            add(
-                ScannerQuickAction("Paste key", Icons.Outlined.ContentPaste) {
-                    haptics.perform(WalletHaptic.Selection)
-                    onSelectKey(validClipboardText)
-                },
-            )
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    return p2pkScannerQuickActionSpecs(
+        showQuickLockToMyKey = settings.showP2PKButtonInDrawer,
+        primaryPublicKey = primaryPublicKey,
+        hasClipboardText = clipboardHasText,
+        readClipboardText = { clipboard.getText()?.text },
+    ).map { spec ->
+        val icon = when (spec.kind) {
+            P2pkScannerQuickActionKind.LockToMyKey -> Icons.Filled.Key
+            P2pkScannerQuickActionKind.PasteKey -> Icons.Outlined.ContentPaste
+        }
+        ScannerQuickAction(spec.label, icon) {
+            haptics.perform(WalletHaptic.Selection)
+            spec.resolveKey()?.let(onSelectKey)
         }
     }
 }
