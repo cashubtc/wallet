@@ -312,7 +312,10 @@ fun NostrScreen(
     }
 
     if (showMissingCustomKeyChoice) {
-        ModalBottomSheet(onDismissRequest = { showMissingCustomKeyChoice = false }) {
+        ModalBottomSheet(
+            onDismissRequest = { showMissingCustomKeyChoice = false },
+            scrimColor = CashuTheme.colors.sheetScrim,
+        ) {
             Column(
                 modifier = Modifier
                     .verticalScroll(rememberScrollState())
@@ -498,6 +501,7 @@ private fun NsecImportSheet(
 
     ModalBottomSheet(
         onDismissRequest = { if (!importing) onDismiss() },
+        scrimColor = CashuTheme.colors.sheetScrim,
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
             Column(

@@ -45,6 +45,7 @@ fun ActionConfirmationSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        scrimColor = CashuTheme.colors.sheetScrim,
     ) {
         ActionConfirmationContent(
             title = title,

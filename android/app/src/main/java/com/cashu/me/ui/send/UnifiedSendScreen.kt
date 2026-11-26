@@ -1943,6 +1943,7 @@ private fun TopUpQuoteSheet(
             if (phase != CashuRequestTopUpPhase.PayingRequest) onDismiss()
         },
         sheetState = sheetState,
+        scrimColor = CashuTheme.colors.sheetScrim,
     ) {
         Column(
             modifier = Modifier

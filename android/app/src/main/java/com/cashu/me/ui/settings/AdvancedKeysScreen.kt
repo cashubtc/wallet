@@ -197,6 +197,7 @@ internal fun ImportP2PKSheet(
     var inputError by remember { mutableStateOf<String?>(null) }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        scrimColor = CashuTheme.colors.sheetScrim,
         sheetState = rememberBottomSheetState(
             initialValue = SheetValue.Hidden,
             enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),

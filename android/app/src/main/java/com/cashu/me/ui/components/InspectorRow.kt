@@ -242,6 +242,7 @@ fun DescriptionDetailRow(
     if (showFullDescription) {
         ModalBottomSheet(
             onDismissRequest = { showFullDescription = false },
+            scrimColor = CashuTheme.colors.sheetScrim,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         ) {
             Column(

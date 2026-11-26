@@ -86,6 +86,7 @@ fun BackupSeedSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        scrimColor = CashuTheme.colors.sheetScrim,
         sheetState = rememberBottomSheetState(
             initialValue = SheetValue.Hidden,
             enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),

@@ -1008,6 +1008,7 @@ private fun OnboardingInfoSheet(title: String, paragraphs: List<String>, onDismi
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = CashuTheme.colors.compactSheetContainer,
+        scrimColor = CashuTheme.colors.sheetScrim,
         // Skip the partially-expanded detent. At that height a short viewport
         // (360x800dp) or a large font scale pushed "Got it" past the sheet edge,
         // where it was clipped and the gesture pill drew across it.

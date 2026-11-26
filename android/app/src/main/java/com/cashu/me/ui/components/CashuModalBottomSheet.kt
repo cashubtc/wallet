@@ -25,6 +25,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
+import com.cashu.me.ui.theme.CashuTheme
 
 /** Native sheet gestures and layout, with spatial motion for dismissal. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -76,6 +77,7 @@ fun CashuModalBottomSheet(
                 onDismissRequest = onDismissRequest,
                 sheetState = sheetState,
                 containerColor = containerColor,
+                scrimColor = CashuTheme.colors.sheetScrim,
                 sheetGesturesEnabled = sheetGesturesEnabled,
                 contentWindowInsets = contentWindowInsets,
             ) {

@@ -441,7 +441,10 @@ fun PrivateKeyRevealSheet(
     val confirmationToastController = LocalConfirmationToastController.current
     val authenticate = rememberWalletAuthenticationLauncher(appLockManager)
     var revealedNsec by remember { mutableStateOf<String?>(null) }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        scrimColor = CashuTheme.colors.sheetScrim,
+    ) {
         Box(modifier = Modifier.fillMaxWidth()) {
             PrivateKeyRevealContent(
                 title = title,
@@ -542,7 +545,10 @@ internal fun PrivateKeyRevealContent(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LockedEcashExplainerSheet(onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        scrimColor = CashuTheme.colors.sheetScrim,
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()

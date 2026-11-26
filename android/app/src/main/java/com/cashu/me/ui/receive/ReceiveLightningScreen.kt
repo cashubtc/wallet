@@ -1900,6 +1900,7 @@ private fun ReusableAmountEditSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        scrimColor = CashuTheme.colors.sheetScrim,
     ) {
         Column(
             modifier = Modifier
@@ -1972,6 +1973,7 @@ internal fun ReusableDescriptionEditSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        scrimColor = CashuTheme.colors.sheetScrim,
         containerColor = CashuTheme.colors.compactSheetContainer,
     ) {
         CompactSheetContent {
@@ -2053,6 +2055,7 @@ private fun ReceiveMethodPickerSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        scrimColor = CashuTheme.colors.sheetScrim,
     ) {
         Column(
             modifier = Modifier

@@ -259,6 +259,7 @@ fun MintsScreen(
         ModalBottomSheet(
             onDismissRequest = { discoveryOpen = false },
             sheetState = sheetState,
+            scrimColor = CashuTheme.colors.sheetScrim,
             containerColor = MaterialTheme.colorScheme.background,
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {

@@ -122,6 +122,11 @@ data class CashuColors(
     val onReceivedContainer: Color,
     val canvasDivider: Color,
     val compactSheetContainer: Color,
+    // The dim behind a bottom sheet; every `ModalBottomSheet` passes it as
+    // `scrimColor`. Material's default is black at 32% in both themes, which
+    // turns the white canvas a heavy grey. Light mode uses the 20% that iOS
+    // dims its sheets by, so the two apps match. Dark keeps Material's 32%.
+    val sheetScrim: Color,
 )
 
 internal val LightCashuColors = CashuColors(
@@ -136,6 +141,7 @@ internal val LightCashuColors = CashuColors(
     onReceivedContainer = Color(0xFF0B5227),
     canvasDivider = Color(0xFFEBEBEB),
     compactSheetContainer = Color(0xFFF7F7F7),
+    sheetScrim = Color.Black.copy(alpha = 0.20f),
 )
 
 internal val DarkCashuColors = CashuColors(
@@ -150,6 +156,7 @@ internal val DarkCashuColors = CashuColors(
     onReceivedContainer = Color(0xFFB7F0C8),
     canvasDivider = Color(0xFF262626),
     compactSheetContainer = Color(0xFF141414),
+    sheetScrim = Color.Black.copy(alpha = 0.32f),
 )
 
 val LocalCashuColors = compositionLocalOf { LightCashuColors }
