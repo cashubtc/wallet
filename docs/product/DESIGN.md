@@ -284,6 +284,31 @@ What this system explicitly rejects, pulled verbatim from docs/product/PRODUCT.m
   full-width facts, 12pt/dp vertical padding, and native minimum row heights.
   Live incoming requests share the payment fact column from Receive and History,
   inside the same compact elevated sheet.
+- *Pending ecash (2026-11-26).* Ecash that left the wallet and has not been
+  claimed holds back the next send or Cashu Request payment from the same mint,
+  and History reaches the same screen from "Manage pending ecash". It is Send's
+  Pending Ecash screen under a heading: "Pending Ecash" and one secondary line
+  saying when sending resumes, then the code on its white card, the compact
+  amount, Date, Mint and a copyable Token row, with two quiet actions pinned
+  underneath: Check Status and Reclaim side by side (stacked at
+  accessibility sizes and on narrow windows). There is no Done: the sheet's
+  close button leaves, as on Send's own token screen. The code gives up height so the
+  amount and rows stay above the actions, the way receipts fit their code to
+  their rows. A check that changes nothing says "Not claimed yet" in the app's
+  confirmation toast, as does a reclaim of one of several ("Reclaimed ₿21").
+  Only a failure stays on screen, under the rows, and the code makes room
+  for it. Reclaim confirms in the shared
+  confirmation sheet. Checking, reclaiming and every settled outcome are the
+  shared status screen: "Checking…" or "Reclaiming…", then "Payment Complete",
+  "Ecash Reclaimed" over the amount that came back (with the fee, when the
+  mint kept one), or "No Pending Ecash". A send the wallet can't confirm wears
+  the caution triangle, "Couldn't Confirm Send", with Check Again alone.
+  With several tokens out, they show one at a time, swiped sideways, with a
+  dot for each under them; Check Status and Reclaim act on the one on show.
+  The amount follows the wallet's bitcoin sign and fiat settings, as on
+  Send. Android writes the titles in sentence case, like its other send
+  terminals. `PendingSendRecoveryView`
+  (iOS) / `PendingSendRecoveryContent` (Android).
 - Idle QR screens have no waiting clock, glow, or label. Active claim progress,
   actionable failures, expiry, and received totals remain. A failed Lightning
   Address claim offers Retry and never claims success before credit. Meaningful

@@ -529,7 +529,7 @@ fun SendEcashScreen(
                 )
 
                 is SendFace.Failure -> if (current.recovery != null) {
-                    PendingSendRecoveryContent(current.recovery, walletManager, onClose, onWorkingChanged = { sending = it })
+                    PendingSendRecoveryContent(current.recovery, walletManager, settingsManager, priceService, onClose, onWorkingChanged = { sending = it })
                 } else PaymentStatusScreen(
                     phase = PaymentStatusPhase.Failure,
                     title = "Couldn't Create Ecash",

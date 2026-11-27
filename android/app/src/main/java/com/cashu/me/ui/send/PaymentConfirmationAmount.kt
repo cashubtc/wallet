@@ -1,8 +1,5 @@
 package com.cashu.me.ui.send
 
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Surface
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
@@ -12,12 +9,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import com.cashu.me.Core.AmountFormatter
 import com.cashu.me.Core.AmountParts
 import com.cashu.me.Core.displayMintUnitAmount
 import com.cashu.me.ui.components.AmountHero
 import com.cashu.me.ui.theme.AmountScale
 import com.cashu.me.ui.theme.CashuTheme
+import com.cashu.me.ui.theme.LeadingLabel
+import com.cashu.me.ui.theme.atSize
 import com.cashu.me.ui.theme.withMonoDigits
 
 internal data class PaymentConfirmationAmountPresentation(
@@ -105,10 +106,12 @@ internal fun PaymentConfirmationAmount(
         verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
     ) {
         if (generatedReceipt) {
-            Text(
-                text = presentation.primary,
-                style = MaterialTheme.typography.headlineMedium.withMonoDigits(),
-                color = MaterialTheme.colorScheme.onSurface,
+            // A generated token's amount sits under its code at the receipt's
+            // compact size, as History's receipt and iOS draw it.
+            AmountHero(
+                parts = AmountParts.parse(presentation.primary),
+                scale = AmountScale.Compact,
+                animated = false,
             )
         } else {
             // Entry, review and the status face share one hero size (iOS
@@ -120,29 +123,21 @@ internal fun PaymentConfirmationAmount(
                 animated = false,
             )
         }
+        // The conversion is plain secondary text under the amount, as on iOS.
+        // Under a generated token it takes the History receipt's size.
         presentation.alternate?.let { alternate ->
-            if (generatedReceipt) {
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                ) {
-                    Text(
-                        text = alternate,
-                        modifier = Modifier.padding(
-                            horizontal = CashuTheme.spacing.default,
-                            vertical = CashuTheme.spacing.micro,
-                        ),
-                        style = MaterialTheme.typography.labelLarge.withMonoDigits(),
-                    )
-                }
-            } else {
-                Text(
-                    text = alternate,
-                    style = MaterialTheme.typography.labelLarge.withMonoDigits(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            Text(
+                text = alternate,
+                style = if (generatedReceipt) {
+                    MaterialTheme.typography.bodyLarge
+                        .atSize(18.sp, leading = LeadingLabel)
+                        .copy(fontWeight = FontWeight.Medium)
+                        .withMonoDigits()
+                } else {
+                    MaterialTheme.typography.labelLarge.withMonoDigits()
+                },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

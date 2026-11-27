@@ -375,7 +375,7 @@ fun TransactionReceiptSheet(
         }
         if (sendRecovery != null) {
             PendingSendRecoveryContent(
-                checkNotNull(sendRecovery), walletManager, onDone = { sendRecovery = null },
+                checkNotNull(sendRecovery), walletManager, settingsManager, priceService, onDone = { sendRecovery = null },
                 modifier = Modifier.weight(1f), onWorkingChanged = { recoveringSend = it },
             )
         } else if (showsQr && description != null) {
