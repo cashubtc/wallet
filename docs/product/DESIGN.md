@@ -303,8 +303,8 @@ What this system explicitly rejects, pulled verbatim from docs/product/PRODUCT.m
   "Ecash Reclaimed" over the amount that came back (with the fee, when the
   mint kept one), or "No Pending Ecash". A send the wallet can't confirm wears
   the caution triangle, "Couldn't Confirm Send", with Check Again alone.
-  With several tokens out, each carries its own quiet Reclaim row and the
-  pinned action is Check Status. Android writes the titles in
+  With several tokens out, they show one at a time, swiped sideways, with a
+  dot for each under them; Check Status and Reclaim act on the one on show. Android writes the titles in
   sentence case, like its other send terminals. `PendingSendRecoveryView`
   (iOS) / `PendingSendRecoveryContent` (Android).
 - Idle QR screens have no waiting clock, glow, or label. Active claim progress,

@@ -73,7 +73,7 @@ fun pendingEcashDarkScreenshot() = RecoveryPreview(SendRecoveryOutcome.Pending, 
 fun pendingEcashLightScreenshot() = RecoveryPreview(SendRecoveryOutcome.Pending, OneSend, darkTheme = false)
 
 @PreviewTest
-@Preview(name = "pending-ecash-several", widthDp = 412, heightDp = 1400, uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "pending-ecash-several", widthDp = 412, heightDp = 915, uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Composable
 fun pendingEcashSeveralScreenshot() = RecoveryPreview(SendRecoveryOutcome.Pending, TwoSends)
 

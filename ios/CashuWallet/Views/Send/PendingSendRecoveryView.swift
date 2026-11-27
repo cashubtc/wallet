@@ -20,6 +20,8 @@ struct PendingSendRecoveryView: View {
     @State private var reclaimTarget: PendingSend?
     @State private var reclaimed: Reclaimed?
     @State private var sharedToken: SharedToken?
+    /// The token on show when several are out, by ID.
+    @State private var page: String?
     /// Measured heights of what surrounds a single token's code, so the code
     /// can give way to them on a short screen.
     @State private var headerHeight: CGFloat = 0
@@ -127,28 +129,24 @@ struct PendingSendRecoveryView: View {
                                     .multilineTextAlignment(.center)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
-                            .padding(.horizontal, 16)
+                            .padding(.horizontal, 32)
                             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
 
-                            ForEach(recovery.sends) { send in
-                                tokenBlock(send, qrSize: qrSize(in: geo.size))
-                            }
-
                             if hasSeveralSends {
-                                PaymentDetailTextRow(label: "Mint", value: mintName)
-                                    .padding(.horizontal, 4)
-                                noticeLine
+                                tokenPager(qrSize: qrSize(in: geo.size))
+                            } else if let send = recovery.sends.first {
+                                tokenBlock(send, qrSize: qrSize(in: geo.size))
+                                    .padding(.horizontal)
                             }
                         }
-                        .padding(.horizontal)
                         .padding(.top, Self.contentTopPadding)
                         .padding(.bottom, Self.contentBottomPadding)
                         .frame(maxWidth: .infinity)
                     }
                     .scrollBounceBehavior(.basedOnSize)
-                    // A failed check or reclaim lands under the facts. Where the
-                    // code can't give way for it (several tokens, a short
-                    // screen), it is brought into view once it is laid out.
+                    // A failed check or reclaim lands under the facts. Where
+                    // the code can't give way for it (a short screen), it is
+                    // brought into view once it is laid out.
                     .onChange(of: notice) { _, notice in
                         guard notice != nil else { return }
                         Task { @MainActor in
@@ -161,6 +159,10 @@ struct PendingSendRecoveryView: View {
 
             tokenActions
         }
+        // A reclaim can take away the token on show; the next one takes its place.
+        .onChange(of: recovery.sends.map(\.id)) { _, ids in
+            if let page, !ids.contains(page) { self.page = ids.first }
+        }
     }
 
     private static let noticeID = "notice"
@@ -168,18 +170,56 @@ struct PendingSendRecoveryView: View {
     private static let contentBottomPadding: CGFloat = 16
     private static let blockSpacing: CGFloat = 24
     private static let qrCardPadding: CGFloat = 16
+    private static let pageDotSize: CGFloat = 7
 
     /// 280pt of code inside the white card, as on Send and Receive. It gives
-    /// up width before it meets the screen edge, and a single token gives up
-    /// height so its amount and facts stay on screen above the actions, the
-    /// way the receipts fit their code around their rows.
+    /// up width before it meets the screen edge, and height so the amount and
+    /// facts stay on screen above the actions, the way the receipts fit their
+    /// code around their rows.
     private func qrSize(in viewport: CGSize) -> CGFloat {
         let widest = min(280, viewport.width - 64)
-        guard !hasSeveralSends else { return max(120, widest) }
+        let dots = hasSeveralSends ? Self.blockSpacing + Self.pageDotSize : 0
         let around = Self.contentTopPadding + headerHeight + Self.blockSpacing
-            + Self.qrCardPadding * 2 + Self.blockSpacing + factsHeight
+            + Self.qrCardPadding * 2 + Self.blockSpacing + factsHeight + dots
             + Self.contentBottomPadding
         return max(120, min(widest, viewport.height - around))
+    }
+
+    /// Several tokens out: one at a time, swiped sideways, with a dot for each
+    /// under them. The actions below act on the token on show.
+    private func tokenPager(qrSize: CGFloat) -> some View {
+        VStack(spacing: Self.blockSpacing) {
+            ScrollView(.horizontal) {
+                LazyHStack(alignment: .top, spacing: 0) {
+                    ForEach(Array(recovery.sends.enumerated()), id: \.element.id) { index, send in
+                        tokenBlock(send, qrSize: qrSize)
+                            .padding(.horizontal)
+                            .containerRelativeFrame(.horizontal)
+                            .accessibilityElement(children: .contain)
+                            .accessibilityLabel("Token \(index + 1) of \(recovery.sends.count)")
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            .scrollTargetBehavior(.paging)
+            .scrollPosition(id: $page)
+            .scrollIndicators(.hidden)
+
+            HStack(spacing: 8) {
+                ForEach(recovery.sends) { send in
+                    Circle()
+                        .fill(send.id == shownSend?.id ? Color.primary : Color.secondary.opacity(0.4))
+                        .frame(width: Self.pageDotSize, height: Self.pageDotSize)
+                }
+            }
+            .animation(.smooth(duration: 0.2), value: shownSend?.id)
+            .accessibilityHidden(true)
+        }
+    }
+
+    /// The token the actions act on: the page on show, or the only one.
+    private var shownSend: PendingSend? {
+        recovery.sends.first { $0.id == page } ?? recovery.sends.first
     }
 
     private func tokenBlock(_ send: PendingSend, qrSize: CGFloat) -> some View {
@@ -194,8 +234,10 @@ struct PendingSendRecoveryView: View {
 
             tokenFacts(send)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-                    // The first measurement places the code. A later one is a
-                    // failure notice arriving, and the code makes room in step.
+                    // Only the token on show places the code. Its first
+                    // measurement sets it; a later one is a failure notice
+                    // arriving, and the code makes room in step.
+                    guard send.id == shownSend?.id else { return }
                     if factsHeight == 0 {
                         factsHeight = height
                     } else {
@@ -232,9 +274,7 @@ struct PendingSendRecoveryView: View {
                 if let sent = sentDate(of: send) {
                     PaymentDetailTextRow(label: "Date", value: sent.formatted(date: .abbreviated, time: .shortened))
                 }
-                if !hasSeveralSends {
-                    PaymentDetailTextRow(label: "Mint", value: mintName)
-                }
+                PaymentDetailTextRow(label: "Mint", value: mintName)
                 if let token = send.token {
                     // The receipts' way with an opaque value: the fixed short
                     // cut, and a tap copies all of it.
@@ -243,36 +283,13 @@ struct PendingSendRecoveryView: View {
                         symbol: "doc.on.doc", hint: "Copies the ecash token to clipboard"
                     ) { copy(token) }
                 }
-                if hasSeveralSends {
-                    // With several tokens out, each carries its own Reclaim
-                    // as a quiet row; a single one keeps it with the pinned
-                    // actions.
-                    reclaimRow(send)
-                }
             }
             .padding(.horizontal, 4)
 
-            if !hasSeveralSends {
+            if send.id == shownSend?.id {
                 noticeLine
             }
         }
-    }
-
-    /// The receipt's Details row, for an action: a label and a chevron.
-    private func reclaimRow(_ send: PendingSend) -> some View {
-        Button(action: { reclaimTarget = send }) {
-            HStack {
-                Text("Reclaim").foregroundStyle(.secondary)
-                Spacer(minLength: 16)
-                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
-            }
-            .paymentDetailRow(isInteractive: true)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(isWorking)
-        .accessibilityHint("Returns this ecash to your wallet")
-        .accessibilityIdentifier("cashu.send.reclaim")
     }
 
     @ViewBuilder
@@ -293,20 +310,18 @@ struct PendingSendRecoveryView: View {
     }
 
     private var tokenActions: some View {
-        VStack(spacing: 12) {
-            if let send = recovery.sends.first, !hasSeveralSends {
-                // Stacked at accessibility sizes, as the confirmation sheet's pair is.
-                if dynamicTypeSize.isAccessibilitySize {
+        // Stacked at accessibility sizes, as the confirmation sheet's pair is.
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: 12) {
                     checkButton
-                    reclaimButton(send)
-                } else {
-                    HStack(spacing: 12) {
-                        checkButton
-                        reclaimButton(send)
-                    }
+                    reclaimButton
                 }
             } else {
-                checkButton
+                HStack(spacing: 12) {
+                    checkButton
+                    reclaimButton
+                }
             }
         }
         .padding(.horizontal)
@@ -324,11 +339,12 @@ struct PendingSendRecoveryView: View {
         .accessibilityInputLabels(["Check Status"])
     }
 
-    private func reclaimButton(_ send: PendingSend) -> some View {
-        Button("Reclaim") { reclaimTarget = send }
+    private var reclaimButton: some View {
+        Button("Reclaim") { reclaimTarget = shownSend }
             .flatSheetSecondaryButton()
-            .disabled(isWorking)
+            .disabled(isWorking || shownSend == nil)
             .accessibilityIdentifier("cashu.send.reclaim")
+            .accessibilityHint(hasSeveralSends ? "Reclaims the token on show" : "")
     }
 
     // MARK: - Checking, reclaiming and settled

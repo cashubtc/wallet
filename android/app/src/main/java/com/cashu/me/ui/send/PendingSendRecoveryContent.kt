@@ -3,10 +3,12 @@ package com.cashu.me.ui.send
 import android.content.ClipData
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -19,7 +21,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -44,6 +50,8 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -61,7 +69,6 @@ import com.cashu.me.Core.Wallet.walletMessage
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.Core.mintDisplayName
 import com.cashu.me.ui.components.ActionConfirmationSheet
-import com.cashu.me.ui.components.DisclosureRow
 import com.cashu.me.ui.components.InlineNotice
 import com.cashu.me.ui.components.InspectorRow
 import com.cashu.me.ui.components.LocalConfirmationToastController
@@ -74,10 +81,10 @@ import com.cashu.me.ui.components.SecondaryButton
 import com.cashu.me.ui.components.paymentDetailWidth
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.fadeThrough
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 internal enum class SendRecoveryActivity { Idle, Checking, Reclaiming }
 
@@ -105,6 +112,7 @@ private val TokensTopPadding = 8.dp
 private val TokensBottomPadding = 16.dp
 private val TokensBlockSpacing = 20.dp
 private val QrCardPadding = 16.dp
+private val PageDotSize = 7.dp
 
 /**
  * Ecash that left the wallet and has not been claimed. Shown when it holds
@@ -352,8 +360,12 @@ private fun TokensFace(
     val several = recovery.sends.size > 1
     val density = LocalDensity.current
     val scrollState = rememberScrollState()
-    // Measured heights of what surrounds a single token's code, so the code
-    // can give way to them on a short window.
+    // Several tokens out are shown one at a time, swiped sideways. The
+    // actions below act on the token on show.
+    val pagerState = rememberPagerState { recovery.sends.size }
+    val shown = recovery.sends.getOrNull(pagerState.currentPage) ?: recovery.sends.firstOrNull()
+    // Measured heights of what surrounds the code on show, so the code can
+    // give way to them on a short window.
     var headerHeight by remember { mutableIntStateOf(0) }
     var factsHeight by remember { mutableIntStateOf(0) }
     // A failed check or reclaim lands under the facts. Where the code can't give
@@ -369,15 +381,14 @@ private fun TokensFace(
     Column(modifier = Modifier.fillMaxSize()) {
         BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
             // 280dp of code inside the white card, as on Send and Receive. It
-            // gives up width before it meets the window edge, and a single
-            // token gives up height so its amount and facts stay on screen,
-            // the way PaymentDetailContent fits a receipt's code to its rows.
+            // gives up width before it meets the window edge, and height so
+            // the amount and facts stay on screen, the way
+            // PaymentDetailContent fits a receipt's code to its rows.
             val widest = minOf(280.dp, maxWidth - 64.dp)
-            val fitted = if (several) widest.coerceAtLeast(120.dp) else {
-                val around = with(density) { (headerHeight + factsHeight).toDp() } +
-                    TokensTopPadding + TokensBottomPadding + TokensBlockSpacing * 2 + QrCardPadding * 2
-                minOf(widest, maxHeight - around).coerceAtLeast(120.dp)
-            }
+            val dots = if (several) TokensBlockSpacing + PageDotSize else 0.dp
+            val around = with(density) { (headerHeight + factsHeight).toDp() } + dots +
+                TokensTopPadding + TokensBottomPadding + TokensBlockSpacing * 2 + QrCardPadding * 2
+            val fitted = minOf(widest, maxHeight - around).coerceAtLeast(120.dp)
             // The first measurement places the code. A later one is a check
             // failure notice arriving, and the code makes room in step.
             var placed by remember { mutableStateOf(false) }
@@ -396,14 +407,13 @@ private fun TokensFace(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(scrollState)
-                    .padding(horizontal = CashuTheme.spacing.comfortable)
                     .padding(top = TokensTopPadding, bottom = TokensBottomPadding),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(TokensBlockSpacing),
             ) {
                 Column(
                     modifier = Modifier
-                        .padding(horizontal = CashuTheme.spacing.default)
+                        .padding(horizontal = CashuTheme.spacing.comfortable + CashuTheme.spacing.default)
                         .onSizeChanged { headerHeight = it.height },
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
@@ -423,22 +433,38 @@ private fun TokensFace(
                         textAlign = TextAlign.Center,
                     )
                 }
-                recovery.sends.forEach { send ->
+                if (several) {
+                    HorizontalPager(
+                        state = pagerState,
+                        verticalAlignment = Alignment.Top,
+                        key = { recovery.sends[it].id },
+                    ) { index ->
+                        val send = recovery.sends[index]
+                        TokenBlock(
+                            send = send,
+                            unit = recovery.unit,
+                            qrSize = qrSize,
+                            sent = sentLabel(send.id),
+                            mintName = mintName,
+                            notice = notice.takeIf { send.id == shown?.id },
+                            onFactsMeasured = { if (send.id == shown?.id) factsHeight = it },
+                            modifier = Modifier
+                                .padding(horizontal = CashuTheme.spacing.comfortable)
+                                .semantics { contentDescription = "Token ${index + 1} of ${recovery.sends.size}" },
+                        )
+                    }
+                    PageDots(count = recovery.sends.size, current = pagerState.currentPage)
+                } else if (shown != null) {
                     TokenBlock(
-                        send = send,
+                        send = shown,
                         unit = recovery.unit,
                         qrSize = qrSize,
-                        sent = sentLabel(send.id),
-                        mintName = mintName.takeIf { !several },
-                        onReclaim = if (several && !working) ({ onReclaim(send) }) else null,
-                        showsReclaim = several,
-                        notice = notice.takeIf { !several },
+                        sent = sentLabel(shown.id),
+                        mintName = mintName,
+                        notice = notice,
                         onFactsMeasured = { factsHeight = it },
+                        modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
                     )
-                }
-                if (several) {
-                    InspectorRow(label = "Mint", value = mintName)
-                    notice?.let { RecoveryNotice(it) }
                 }
             }
         }
@@ -450,42 +476,54 @@ private fun TokensFace(
             verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
         ) {
             val checkLabel = if (checking) "Checking…" else "Check Status"
-            val sole = recovery.sends.singleOrNull()
-            if (sole == null) {
-                SecondaryButton(
-                    text = checkLabel, onClick = onCheck, enabled = !working, compact = true,
-                    modifier = Modifier.testTag("cashu.send.check-recovery"),
-                )
-            } else {
-                // Stacked on a narrow window or at large text, as the
-                // confirmation sheet's pair is.
-                val fontScale = LocalDensity.current.fontScale
-                BoxWithConstraints {
-                    if (maxWidth < 320.dp || fontScale >= 1.3f) {
-                        Column(verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug)) {
-                            SecondaryButton(
-                                text = checkLabel, onClick = onCheck, enabled = !working, compact = true,
-                                modifier = Modifier.testTag("cashu.send.check-recovery"),
-                            )
-                            SecondaryButton(
-                                text = "Reclaim", onClick = { onReclaim(sole) }, enabled = !working, compact = true,
-                                modifier = Modifier.testTag("cashu.send.reclaim"),
-                            )
-                        }
-                    } else {
-                        Row(horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug)) {
-                            SecondaryButton(
-                                text = checkLabel, onClick = onCheck, enabled = !working, compact = true,
-                                modifier = Modifier.weight(1f).testTag("cashu.send.check-recovery"),
-                            )
-                            SecondaryButton(
-                                text = "Reclaim", onClick = { onReclaim(sole) }, enabled = !working, compact = true,
-                                modifier = Modifier.weight(1f).testTag("cashu.send.reclaim"),
-                            )
-                        }
+            val reclaim = { shown?.let(onReclaim) ?: Unit }
+            // Stacked on a narrow window or at large text, as the
+            // confirmation sheet's pair is.
+            val fontScale = LocalDensity.current.fontScale
+            BoxWithConstraints {
+                if (maxWidth < 320.dp || fontScale >= 1.3f) {
+                    Column(verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug)) {
+                        SecondaryButton(
+                            text = checkLabel, onClick = onCheck, enabled = !working, compact = true,
+                            modifier = Modifier.testTag("cashu.send.check-recovery"),
+                        )
+                        SecondaryButton(
+                            text = "Reclaim", onClick = reclaim, enabled = !working && shown != null, compact = true,
+                            modifier = Modifier.testTag("cashu.send.reclaim"),
+                        )
+                    }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug)) {
+                        SecondaryButton(
+                            text = checkLabel, onClick = onCheck, enabled = !working, compact = true,
+                            modifier = Modifier.weight(1f).testTag("cashu.send.check-recovery"),
+                        )
+                        SecondaryButton(
+                            text = "Reclaim", onClick = reclaim, enabled = !working && shown != null, compact = true,
+                            modifier = Modifier.weight(1f).testTag("cashu.send.reclaim"),
+                        )
                     }
                 }
             }
+        }
+    }
+}
+
+/** A dot per token under the pager, the one on show filled. */
+@Composable
+private fun PageDots(count: Int, current: Int) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.clearAndSetSemantics {},
+    ) {
+        repeat(count) { index ->
+            val color by animateColorAsState(
+                targetValue = if (index == current) MaterialTheme.colorScheme.onSurface
+                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                animationSpec = tween(durationMillis = 200),
+                label = "pending-ecash-page-dot",
+            )
+            Box(Modifier.size(PageDotSize).background(color, CircleShape))
         }
     }
 }
@@ -496,18 +534,17 @@ private fun TokenBlock(
     unit: String,
     qrSize: Dp,
     sent: String?,
-    mintName: String?,
-    onReclaim: (() -> Unit)?,
-    showsReclaim: Boolean,
+    mintName: String,
     notice: SendRecoveryNotice?,
     onFactsMeasured: (Int) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val amount = sendRecoveryAmount(send.amount, unit)
     val clipboard = LocalClipboard.current
     val confirmationToastController = LocalConfirmationToastController.current
     val scope = rememberCoroutineScope()
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(TokensBlockSpacing),
     ) {
@@ -545,9 +582,7 @@ private fun TokenBlock(
                 if (sent != null) {
                     InspectorRow(label = "Date", value = sent)
                 }
-                if (mintName != null) {
-                    InspectorRow(label = "Mint", value = mintName)
-                }
+                InspectorRow(label = "Mint", value = mintName)
                 if (send.token != null) {
                     // The receipts' way with an opaque value: the fixed short
                     // cut, and a tap copies all of it.
@@ -561,15 +596,6 @@ private fun TokenBlock(
                             }
                         },
                         trailingIcon = Icons.Outlined.ContentCopy,
-                    )
-                }
-                // With several tokens out, each carries its own Reclaim as a quiet
-                // row; a single one keeps it with the pinned actions.
-                if (showsReclaim) {
-                    DisclosureRow(
-                        label = "Reclaim",
-                        onClick = onReclaim ?: {},
-                        modifier = Modifier.paymentDetailWidth().testTag("cashu.send.reclaim"),
                     )
                 }
             }
