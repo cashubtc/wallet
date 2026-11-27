@@ -13,6 +13,7 @@ struct TransactionDetailView: View {
     @State private var contentHeight: CGFloat = 0
     @State private var claimReceiveToken: PendingReceiveToken?
     @State private var showSendRecovery = false
+    @State private var isRecoveringSend = false
     @State private var showShareSheet = false
     @State private var showTechnicalDetails = false
     @State private var isCheckingClaim = false
@@ -131,10 +132,24 @@ struct TransactionDetailView: View {
             }
             .sheet(isPresented: $showSendRecovery) {
                 if let mintURL = seed.mintUrl, let operationID = seed.sagaId {
-                    PendingSendRecoveryView(
-                        recovery: PendingSendRecovery(mintURL: mintURL, unit: seed.unit, operationIDs: [operationID]),
-                        onDone: { showSendRecovery = false }
-                    )
+                    // Send's chrome: the close button is the way out, as the
+                    // screen has no Done of its own.
+                    NavigationStack {
+                        PendingSendRecoveryView(
+                            recovery: PendingSendRecovery(mintURL: mintURL, unit: seed.unit, operationIDs: [operationID]),
+                            onDone: { showSendRecovery = false },
+                            onWorkingChanged: { isRecoveringSend = $0 }
+                        )
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbarBackground(.hidden, for: .navigationBar)
+                        .toolbar {
+                            ToolbarItem(placement: .topBarLeading) {
+                                SheetCloseButton { showSendRecovery = false }
+                                    .disabled(isRecoveringSend)
+                            }
+                        }
+                    }
+                    .canvasSheetBackground()
                 }
             }
             .sheet(isPresented: $showShareSheet) {

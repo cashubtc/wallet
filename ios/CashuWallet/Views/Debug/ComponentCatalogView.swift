@@ -326,11 +326,21 @@ struct SendRecoveryCatalog: View {
     @ViewBuilder
     private var faces: some View {
         if variant == .sheet {
-            // History opens it as a sheet of its own, with no navigation bar.
+            // History opens it as a sheet of its own, with Send's close button.
             Color.clear
                 .sheet(isPresented: .constant(true)) {
-                    PendingSendRecoveryView(recovery: recovery, onDone: {})
-                        .environmentObject(walletManager)
+                    NavigationStack {
+                        PendingSendRecoveryView(recovery: recovery, onDone: {})
+                            .environmentObject(walletManager)
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbarBackground(.hidden, for: .navigationBar)
+                            .toolbar {
+                                ToolbarItem(placement: .topBarLeading) {
+                                    SheetCloseButton(action: {})
+                                }
+                            }
+                    }
+                    .canvasSheetBackground()
                 }
         } else {
             // The chrome of the Cashu Request pay sheet, one of the flows it
