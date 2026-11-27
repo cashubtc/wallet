@@ -385,7 +385,7 @@ private fun TokensFace(
             // the amount and facts stay on screen, the way
             // PaymentDetailContent fits a receipt's code to its rows.
             val widest = minOf(280.dp, maxWidth - 64.dp)
-            val dots = if (several) TokensBlockSpacing + PageDotSize else 0.dp
+            val dots = if (several) PageDotSize + TokensBlockSpacing else 0.dp
             val around = with(density) { (headerHeight + factsHeight).toDp() } + dots +
                 TokensTopPadding + TokensBottomPadding + TokensBlockSpacing * 2 + QrCardPadding * 2
             val fitted = minOf(widest, maxHeight - around).coerceAtLeast(120.dp)
@@ -434,26 +434,40 @@ private fun TokensFace(
                     )
                 }
                 if (several) {
-                    HorizontalPager(
-                        state = pagerState,
-                        verticalAlignment = Alignment.Top,
-                        key = { recovery.sends[it].id },
-                    ) { index ->
-                        val send = recovery.sends[index]
-                        TokenBlock(
-                            send = send,
-                            unit = recovery.unit,
-                            qrSize = qrSize,
-                            sent = sentLabel(send.id),
-                            mintName = mintName,
-                            notice = notice.takeIf { send.id == shown?.id },
-                            onFactsMeasured = { if (send.id == shown?.id) factsHeight = it },
+                    // The dots sit still just under the code, the part that
+                    // visibly changes, in the room each page leaves for them.
+                    Box {
+                        HorizontalPager(
+                            state = pagerState,
+                            verticalAlignment = Alignment.Top,
+                            key = { recovery.sends[it].id },
+                        ) { index ->
+                            val send = recovery.sends[index]
+                            TokenBlock(
+                                send = send,
+                                unit = recovery.unit,
+                                qrSize = qrSize,
+                                sent = sentLabel(send.id),
+                                mintName = mintName,
+                                notice = notice.takeIf { send.id == shown?.id },
+                                onFactsMeasured = { if (send.id == shown?.id) factsHeight = it },
+                                dotsRoom = true,
+                                modifier = Modifier
+                                    .padding(horizontal = CashuTheme.spacing.comfortable)
+                                    .semantics { contentDescription = "Token ${index + 1} of ${recovery.sends.size}" },
+                            )
+                        }
+                        PageDots(
+                            count = recovery.sends.size,
+                            current = pagerState.currentPage,
                             modifier = Modifier
-                                .padding(horizontal = CashuTheme.spacing.comfortable)
-                                .semantics { contentDescription = "Token ${index + 1} of ${recovery.sends.size}" },
+                                .align(Alignment.TopCenter)
+                                .padding(
+                                    top = if (shown?.token == null) 0.dp
+                                    else qrSize + QrCardPadding * 2 + TokensBlockSpacing,
+                                ),
                         )
                     }
-                    PageDots(count = recovery.sends.size, current = pagerState.currentPage)
                 } else if (shown != null) {
                     TokenBlock(
                         send = shown,
@@ -511,10 +525,10 @@ private fun TokensFace(
 
 /** A dot per token under the pager, the one on show filled. */
 @Composable
-private fun PageDots(count: Int, current: Int) {
+private fun PageDots(count: Int, current: Int, modifier: Modifier = Modifier) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.clearAndSetSemantics {},
+        modifier = modifier.clearAndSetSemantics {},
     ) {
         repeat(count) { index ->
             val color by animateColorAsState(
@@ -538,6 +552,7 @@ private fun TokenBlock(
     notice: SendRecoveryNotice?,
     onFactsMeasured: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    dotsRoom: Boolean = false,
 ) {
     val amount = sendRecoveryAmount(send.amount, unit)
     val clipboard = LocalClipboard.current
@@ -555,6 +570,10 @@ private fun TokenBlock(
                 shareSubject = "Cashu token",
                 confirmationMessage = "Copied ecash token",
             )
+        }
+        if (dotsRoom) {
+            // Room for the page dots, which sit still over the pager.
+            Spacer(Modifier.height(PageDotSize))
         }
         Column(
             modifier = Modifier.fillMaxWidth().onSizeChanged { onFactsMeasured(it.height) },

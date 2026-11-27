@@ -178,7 +178,7 @@ struct PendingSendRecoveryView: View {
     /// code around their rows.
     private func qrSize(in viewport: CGSize) -> CGFloat {
         let widest = min(280, viewport.width - 64)
-        let dots = hasSeveralSends ? Self.blockSpacing + Self.pageDotSize : 0
+        let dots = hasSeveralSends ? Self.pageDotSize + Self.blockSpacing : 0
         let around = Self.contentTopPadding + headerHeight + Self.blockSpacing
             + Self.qrCardPadding * 2 + Self.blockSpacing + factsHeight + dots
             + Self.contentBottomPadding
@@ -186,25 +186,25 @@ struct PendingSendRecoveryView: View {
     }
 
     /// Several tokens out: one at a time, swiped sideways, with a dot for each
-    /// under them. The actions below act on the token on show.
+    /// just under the code, the part that visibly changes. The dots stay put
+    /// while the pages move. The actions below act on the token on show.
     private func tokenPager(qrSize: CGFloat) -> some View {
-        VStack(spacing: Self.blockSpacing) {
-            ScrollView(.horizontal) {
-                LazyHStack(alignment: .top, spacing: 0) {
-                    ForEach(Array(recovery.sends.enumerated()), id: \.element.id) { index, send in
-                        tokenBlock(send, qrSize: qrSize)
-                            .padding(.horizontal)
-                            .containerRelativeFrame(.horizontal)
-                            .accessibilityElement(children: .contain)
-                            .accessibilityLabel("Token \(index + 1) of \(recovery.sends.count)")
-                    }
+        ScrollView(.horizontal) {
+            LazyHStack(alignment: .top, spacing: 0) {
+                ForEach(Array(recovery.sends.enumerated()), id: \.element.id) { index, send in
+                    tokenBlock(send, qrSize: qrSize)
+                        .padding(.horizontal)
+                        .containerRelativeFrame(.horizontal)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityLabel("Token \(index + 1) of \(recovery.sends.count)")
                 }
-                .scrollTargetLayout()
             }
-            .scrollTargetBehavior(.paging)
-            .scrollPosition(id: $page)
-            .scrollIndicators(.hidden)
-
+            .scrollTargetLayout()
+        }
+        .scrollTargetBehavior(.paging)
+        .scrollPosition(id: $page)
+        .scrollIndicators(.hidden)
+        .overlay(alignment: .top) {
             HStack(spacing: 8) {
                 ForEach(recovery.sends) { send in
                     Circle()
@@ -213,6 +213,8 @@ struct PendingSendRecoveryView: View {
                 }
             }
             .animation(.smooth(duration: 0.2), value: shownSend?.id)
+            // In the room each page leaves under its code card.
+            .padding(.top, shownSend?.token == nil ? 0 : qrSize + Self.qrCardPadding * 2 + Self.blockSpacing)
             .accessibilityHidden(true)
         }
     }
@@ -230,6 +232,11 @@ struct PendingSendRecoveryView: View {
                     onCopy: { copy(token) },
                     onShare: { sharedToken = SharedToken(token: token) }
                 )
+            }
+
+            if hasSeveralSends {
+                // Room for the page dots, which sit still over the pager.
+                Color.clear.frame(height: Self.pageDotSize)
             }
 
             tokenFacts(send)
