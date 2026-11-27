@@ -83,7 +83,20 @@ struct PaymentCodeCard: View {
 /// QR Code display view with animation support for large data
 /// Includes per-QR speed and size controls like cashu.me
 struct QRCodeView: View {
-    private static let ciContext = CIContext()
+    private nonisolated(unsafe) static let ciContext = CIContext()
+    private nonisolated(unsafe) static let imageCache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.countLimit = 32
+        return cache
+    }()
+
+    private struct PlaybackKey: Equatable {
+        let content: String
+        let staticOnly: Bool
+        let size: QRSize
+        let speed: QRSpeed
+    }
+
     let content: String
     var showControls: Bool = true
     /// When true, never UR-encode the content. Use for standardized payloads
@@ -102,26 +115,28 @@ struct QRCodeView: View {
     @State private var speed: QRSpeed = .fast
     @State private var size: QRSize = .large
 
-    @State private var currentQRCodeString: String = ""
-    @State private var currentPartIndex: Int = 0
-    @State private var totalParts: Int = 0
-    @State private var timer: Timer?
+    @State private var totalParts: Int = 1
 
-    @State private var encoder: TokenUrEncoder?
     // Generating the QR on every body pass handed SwiftUI a fresh UIImage each
     // time; inside an animated update (a quote refresh while the invoice is
     // showing) the old and new images cross-dissolved and the modules went
     // grey for a frame. Cache per source string so re-renders reuse the image.
     @State private var renderedQR: (source: String, image: UIImage)?
 
-    private var displayedQRImage: UIImage? {
-        if let renderedQR, renderedQR.source == currentQRCodeString { return renderedQR.image }
-        return generateQRCode(from: currentQRCodeString)
+    private var isDirectlyStatic: Bool {
+        staticOnly || content.count <= size.chunkSize
     }
 
-    private func cacheQRImage() {
-        guard renderedQR?.source != currentQRCodeString else { return }
-        renderedQR = generateQRCode(from: currentQRCodeString).map { (currentQRCodeString, $0) }
+    private var displayedQRImage: UIImage? {
+        if isDirectlyStatic {
+            if let renderedQR, renderedQR.source == content { return renderedQR.image }
+            return Self.cachedQRImage(for: content)
+        }
+        return renderedQR?.image
+    }
+
+    private var playbackKey: PlaybackKey {
+        PlaybackKey(content: content, staticOnly: staticOnly, size: size, speed: speed)
     }
 
     var body: some View {
@@ -160,23 +175,13 @@ struct QRCodeView: View {
                 controlsRow
             }
         }
-        .onAppear {
-            prepareEncoder()
-        }
-        .onChange(of: currentQRCodeString, initial: true) {
-            cacheQRImage()
-        }
-        .onChange(of: content) {
-            prepareEncoder()
-        }
-        .onChange(of: speed) {
-            restartTimer()
-        }
-        .onChange(of: size) {
-            prepareEncoder()
-        }
-        .onDisappear {
-            stopTimer()
+        .task(id: playbackKey) {
+            await runPlayback(
+                content: content,
+                staticOnly: staticOnly,
+                chunkSize: size.chunkSize,
+                interval: speed.interval
+            )
         }
     }
     
@@ -221,84 +226,101 @@ struct QRCodeView: View {
         .padding(.top, 4)
     }
     
-    // MARK: - Encoder Logic
+    // MARK: - Encoder & Rendering
 
-    private func prepareEncoder() {
-        stopTimer()
-
-        // Static-only mode short-circuits UR encoding entirely so scanners
-        // receive a single standard QR frame.
-        if staticOnly {
-            encoder = nil
-            currentQRCodeString = content
+    @MainActor
+    private func runPlayback(
+        content: String,
+        staticOnly: Bool,
+        chunkSize: Int,
+        interval: Double
+    ) async {
+        // Static-only and short payloads stay a single standard QR frame and
+        // reuse the 1x module cache with no background encoding work.
+        if staticOnly || content.count <= chunkSize {
             totalParts = 1
+            if renderedQR?.source != content {
+                renderedQR = Self.cachedQRImage(for: content).map { (content, $0) }
+            }
             return
         }
 
-        let chunkSize = size.chunkSize
-
-        // NUT-16 animated frames come from CDK's own fountain encoder. Only
-        // Cashu tokens animate: anything else (invoices, addresses, request
-        // strings) is a standardized static payload, and non-token content
-        // simply doesn't fit the NUT-16 envelope.
-        if content.count > chunkSize,
-           let token = try? Token.decode(encodedToken: content),
-           let urEncoder = try? token.urEncoder(maxFragmentLength: UInt32(chunkSize)),
-           !urEncoder.isSingleFragment() {
-            encoder = urEncoder
-            totalParts = Int(urEncoder.fragmentCount())
-            currentPartIndex = 1
-            currentQRCodeString = (try? urEncoder.nextPart()) ?? content
-            startTimer()
-        } else {
-            encoder = nil
-            currentQRCodeString = content
-            totalParts = 1
-        }
-    }
-
-    private func startTimer() {
-        // Keep the initial encoded frame in deterministic UI journeys. Updating
-        // it every 100 ms prevents XCTest accessibility snapshots from settling.
-        guard !IntegrationTestConfig.shouldDisableAnimations, encoder != nil else { return }
-
-        timer = Timer.scheduledTimer(withTimeInterval: speed.interval, repeats: true) { _ in
-            if let part = try? encoder?.nextPart() {
-                currentQRCodeString = part
-                currentPartIndex = Int(encoder?.currentIndex() ?? 0)
+        let disableAnimations = IntegrationTestConfig.shouldDisableAnimations
+        let publish: @MainActor (String, UIImage?, Int) -> Void = { source, image, parts in
+            self.totalParts = parts
+            if let image {
+                self.renderedQR = (source, image)
+            } else {
+                self.renderedQR = nil
             }
         }
+
+        // Decode tokens, step the NUT-16 fountain encoder, and rasterize frames
+        // off the main actor so animated QR playback never stalls UI interaction.
+        let worker = Task.detached(priority: .userInitiated) {
+            if let token = try? Token.decode(encodedToken: content),
+               let urEncoder = try? token.urEncoder(maxFragmentLength: UInt32(chunkSize)),
+               !urEncoder.isSingleFragment() {
+                let parts = max(1, Int(urEncoder.fragmentCount()))
+                let firstPart = (try? urEncoder.nextPart()) ?? content
+                let firstImage = Self.generateQRImage(from: firstPart)
+                guard !Task.isCancelled else { return }
+                await publish(firstPart, firstImage, parts)
+
+                // Keep the initial encoded frame in deterministic UI journeys. Updating
+                // it every 100 ms prevents XCTest accessibility snapshots from settling.
+                guard !disableAnimations else { return }
+
+                let sleepNanos = UInt64(interval * 1_000_000_000)
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: sleepNanos)
+                    guard !Task.isCancelled else { break }
+                    guard let part = try? urEncoder.nextPart(),
+                          let image = Self.generateQRImage(from: part) else {
+                        continue
+                    }
+                    guard !Task.isCancelled else { break }
+                    await publish(part, image, parts)
+                }
+            } else {
+                let image = Self.cachedQRImage(for: content)
+                guard !Task.isCancelled else { return }
+                await publish(content, image, 1)
+            }
+        }
+
+        await withTaskCancellationHandler {
+            await worker.value
+        } onCancel: {
+            worker.cancel()
+        }
     }
-    
-    private func restartTimer() {
-        stopTimer()
-        startTimer()
-    }
-    
-    private func stopTimer() {
-        timer?.invalidate()
-        timer = nil
-    }
-    
-    private func generateQRCode(from string: String) -> UIImage? {
+
+    private nonisolated static func cachedQRImage(for string: String) -> UIImage? {
         guard !string.isEmpty else { return nil }
-        
+        let key = string as NSString
+        if let cached = imageCache.object(forKey: key) {
+            return cached
+        }
+        guard let image = generateQRImage(from: string) else { return nil }
+        imageCache.setObject(image, forKey: key)
+        return image
+    }
+
+    /// Rasterizes the QR at native 1 px per module; `Image.interpolation(.none)`
+    /// scales modules crisply on the GPU without allocating a multi-megapixel bitmap.
+    nonisolated static func generateQRImage(from string: String) -> UIImage? {
+        guard !string.isEmpty else { return nil }
+
         let filter = CIFilter.qrCodeGenerator()
-        
         filter.message = Data(string.utf8)
         filter.correctionLevel = "M"
-        
-        guard let outputImage = filter.outputImage else { return nil }
-        
-        // Scale up the image
-        let scale = UIScreen.main.scale * 3
-        let transform = CGAffineTransform(scaleX: scale, y: scale)
-        let scaledImage = outputImage.transformed(by: transform)
-        
-        guard let cgImage = Self.ciContext.createCGImage(scaledImage, from: scaledImage.extent) else {
+
+        guard let outputImage = filter.outputImage,
+              let cgImage = ciContext.createCGImage(outputImage, from: outputImage.extent) else {
             return nil
         }
-        
+
         return UIImage(cgImage: cgImage)
     }
 }

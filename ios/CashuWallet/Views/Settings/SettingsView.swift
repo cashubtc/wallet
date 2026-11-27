@@ -1108,7 +1108,7 @@ struct QRCodeDetailSheet: View {
                     .font(.title2.weight(.semibold))
                     .multilineTextAlignment(.center)
 
-                QRCodeView(content: content, showControls: false)
+                QRCodeView(content: content, showControls: false, staticOnly: true)
                     .padding()
                     .frame(width: 280, height: 280)
                     .background(Color.white)
