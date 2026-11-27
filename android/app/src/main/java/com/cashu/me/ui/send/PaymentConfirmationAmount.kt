@@ -1,8 +1,5 @@
 package com.cashu.me.ui.send
 
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Surface
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
@@ -120,29 +117,13 @@ internal fun PaymentConfirmationAmount(
                 animated = false,
             )
         }
+        // The conversion is plain secondary text under the amount, as on iOS.
         presentation.alternate?.let { alternate ->
-            if (generatedReceipt) {
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                ) {
-                    Text(
-                        text = alternate,
-                        modifier = Modifier.padding(
-                            horizontal = CashuTheme.spacing.default,
-                            vertical = CashuTheme.spacing.micro,
-                        ),
-                        style = MaterialTheme.typography.labelLarge.withMonoDigits(),
-                    )
-                }
-            } else {
-                Text(
-                    text = alternate,
-                    style = MaterialTheme.typography.labelLarge.withMonoDigits(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            Text(
+                text = alternate,
+                style = MaterialTheme.typography.labelLarge.withMonoDigits(),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
