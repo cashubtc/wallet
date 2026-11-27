@@ -1454,7 +1454,7 @@ struct ReceiveLightningView: View {
                     await refreshMintQuoteStatus()
                 }
                 guard !Task.isCancelled, !isPaid else { return }
-                await monitorMintQuoteViaSubscription(quoteId: quote.id, paymentMethod: .bolt11)
+                await monitorBolt11Quote(quoteId: quote.id)
             case .bolt12:
                 // A reusable offer must keep making progress even when a
                 // websocket stays connected but stops delivering updates.
@@ -1465,6 +1465,31 @@ struct ReceiveLightningView: View {
                 await refreshMintQuoteStatus()
                 await monitorMintQuoteViaSubscription(quoteId: quote.id, paymentMethod: .onchain)
             }
+        }
+    }
+
+    /// The websocket is an accelerator, not the only path to "paid": a socket
+    /// can stay connected while a proxy, NAT or mobile network silently stops
+    /// delivering its frames. A slow poll beside it keeps the sheet making
+    /// progress in that case (Android `ReceiveLightningScreen` parity, which
+    /// always polls next to the subscription). Whichever loop finishes first
+    /// (paid, expired, quote replaced) cancels the other.
+    @MainActor
+    private func monitorBolt11Quote(quoteId: String) async {
+        // Without websockets the subscription path already polls, backing off from 5 s to 15 s.
+        guard SettingsManager.shared.useWebsockets else {
+            await monitorMintQuoteViaSubscription(quoteId: quoteId, paymentMethod: .bolt11)
+            return
+        }
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { @MainActor in
+                await monitorMintQuoteViaSubscription(quoteId: quoteId, paymentMethod: .bolt11)
+            }
+            group.addTask { @MainActor in
+                await pollMintQuote(quoteId: quoteId, initialInterval: 15, maxInterval: 15)
+            }
+            await group.next()
+            group.cancelAll()
         }
     }
 
