@@ -175,6 +175,8 @@ struct SendView: View {
             }
             .onDisappear {
                 checkingTask?.cancel()
+                checkingTask = nil
+                isCheckingClaim = false
             }
             .onChange(of: entryUnit) { oldUnit, newUnit in
                 // Only the sats↔fiat display flip re-expresses the typed string.
@@ -752,6 +754,11 @@ struct SendView: View {
                   let mintUrl = generatedTokenMintURL else { return }
             startClaimPolling(token: token, mintUrl: mintUrl)
         }
+        .onDisappear {
+            checkingTask?.cancel()
+            checkingTask = nil
+            isCheckingClaim = false
+        }
     }
 
     /// Full-screen success shown once the recipient claims the token — the exact
@@ -944,13 +951,11 @@ struct SendView: View {
 
         isCheckingClaim = true
 
-        checkingTask = Task {
-            let maxChecks = 10
+        checkingTask = Task { @MainActor in
             let maxInterval = 15
-            var checkCount = 0
             var interval = 5
 
-            while !Task.isCancelled && !tokenClaimed && checkCount < maxChecks {
+            while !Task.isCancelled && !tokenClaimed {
                 do {
                     try await Task.sleep(for: .seconds(interval))
                 } catch {
@@ -974,6 +979,7 @@ struct SendView: View {
                     // own (the claim check publishes wallet state as it returns),
                     // or the swap renders as a cut.
                     try? await Task.sleep(for: .milliseconds(1))
+                    guard !Task.isCancelled else { break }
                     withAnimation(.smooth(duration: 0.3)) {
                         tokenClaimed = true
                         isCheckingClaim = false
@@ -981,11 +987,12 @@ struct SendView: View {
                     break
                 }
 
-                checkCount += 1
                 interval = min(interval + 1, maxInterval)
             }
 
-            isCheckingClaim = false
+            if !Task.isCancelled {
+                isCheckingClaim = false
+            }
         }
     }
 

@@ -2,6 +2,7 @@ package com.cashu.me.ui.components
 
 import android.content.Context
 import android.content.Intent
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -14,16 +15,20 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -44,7 +49,7 @@ import com.cashu.me.ui.theme.CashuTheme
  * primary share affordance per UX_SPEC §0. The 20dp corner comes from the M3 'large'
  * shape token; 16dp padding cushions the QR off the white surface.
  */
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun QrCard(
     content: String,
@@ -52,6 +57,7 @@ fun QrCard(
     size: Dp = 280.dp,
     showQrControls: Boolean = false,
     staticOnly: Boolean = false,
+    loading: Boolean = false,
     shareSubject: String = "Cashu",
     confirmationMessage: String = "Copied",
 ) {
@@ -60,6 +66,13 @@ fun QrCard(
     val haptics = LocalHapticFeedback.current
     val confirmationToastController = LocalConfirmationToastController.current
     var menuOpen by remember { mutableStateOf(false) }
+    val qrAlpha by animateFloatAsState(
+        targetValue = if (loading) 0.25f else 1f,
+        label = "qr-loading-alpha",
+    )
+    LaunchedEffect(loading) {
+        if (loading) menuOpen = false
+    }
 
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Box(
@@ -67,9 +80,14 @@ fun QrCard(
                 .clip(MaterialTheme.shapes.large)
                 .background(Color.White)
                 .semantics {
-                    contentDescription = "QR code. Long press for copy and share options."
+                    contentDescription = if (loading) {
+                        "Updating QR code"
+                    } else {
+                        "QR code. Long press for copy and share options."
+                    }
                 }
                 .combinedClickable(
+                    enabled = !loading,
                     onClick = {},
                     onLongClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -80,16 +98,23 @@ fun QrCard(
                 )
                 .padding(CashuTheme.spacing.comfortable)
                 .size(size),
+            contentAlignment = Alignment.Center,
         ) {
             QRCodeView(
                 content = content,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().alpha(qrAlpha),
                 showControls = showQrControls,
                 staticOnly = staticOnly,
             )
+            if (loading) {
+                LoadingIndicator(
+                    modifier = Modifier.size(48.dp),
+                    color = Color.Black,
+                )
+            }
         }
         DropdownMenu(
-            expanded = menuOpen,
+            expanded = menuOpen && !loading,
             onDismissRequest = { menuOpen = false },
             shape = MaterialTheme.shapes.large,
         ) {

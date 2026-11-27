@@ -64,18 +64,33 @@ struct PaymentCodeCard: View {
     let content: String
     let size: CGFloat
     var staticOnly = true
+    var isLoading = false
     let onCopy: () -> Void
     let onShare: () -> Void
 
     var body: some View {
         QRCodeView(content: content, showControls: false, staticOnly: staticOnly,
-                   onCopy: onCopy, onShare: onShare)
+                   onCopy: isLoading ? nil : onCopy, onShare: isLoading ? nil : onShare)
+            .opacity(isLoading ? 0.25 : 1)
+            .accessibilityHidden(isLoading)
             .frame(width: size, height: size)
             .padding(16)
             .background(Color.white, in: RoundedRectangle(cornerRadius: 20))
+            .overlay {
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.large)
+                        .tint(.black)
+                        .accessibilityLabel("Updating QR code")
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: isLoading)
+            .allowsHitTesting(!isLoading)
             .contextMenu {
-                Button(action: onCopy) { Label("Copy", systemImage: "doc.on.doc") }
-                Button(action: onShare) { Label("Share", systemImage: "square.and.arrow.up") }
+                if !isLoading {
+                    Button(action: onCopy) { Label("Copy", systemImage: "doc.on.doc") }
+                    Button(action: onShare) { Label("Share", systemImage: "square.and.arrow.up") }
+                }
             }
     }
 }

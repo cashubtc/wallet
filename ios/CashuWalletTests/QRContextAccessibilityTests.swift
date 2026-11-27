@@ -27,6 +27,20 @@ final class QRContextAccessibilityTests: XCTestCase {
         XCTAssertTrue(shared)
     }
 
+    @MainActor
+    func testPaymentCodeCardLoadingDefaultsOffAndCanIndicateRegeneration() {
+        let idle = PaymentCodeCard(content: "lno1offer", size: 240, onCopy: {}, onShare: {})
+        XCTAssertFalse(idle.isLoading)
+        let regenerating = PaymentCodeCard(
+            content: "lno1offer",
+            size: 240,
+            isLoading: true,
+            onCopy: {},
+            onShare: {}
+        )
+        XCTAssertTrue(regenerating.isLoading)
+    }
+
     func testHistoryPaymentCodeAvailabilityAcrossDirectionsAndStates() {
         for kind in [WalletTransaction.TransactionKind.ecash, .lightning, .onchain] {
             for direction in [WalletTransaction.TransactionType.incoming, .outgoing] {

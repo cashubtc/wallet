@@ -27,6 +27,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import com.cashu.me.Core.AppLockManager
 import com.cashu.me.Core.NostrMintBackupService
@@ -122,8 +123,12 @@ fun BackupRestoreScreen(
                 onClick = {
                     backupError = null
                     scope.launch {
-                        runCatching { nostrMintBackupService.backupMints() }
-                            .onFailure { backupError = ActionErrorMessages.message(it, ActionErrorMessages.Context.MintBackup) }
+                        try {
+                            nostrMintBackupService.backupMints()
+                        } catch (t: Throwable) {
+                            if (t is CancellationException) throw t
+                            backupError = ActionErrorMessages.message(t, ActionErrorMessages.Context.MintBackup)
+                        }
                     }
                 },
             )

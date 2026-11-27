@@ -8,9 +8,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -26,6 +28,7 @@ import com.cashu.me.ui.theme.CashuTheme
  * Settings rows on M3 [ListItem] — native geometry, states, and typography.
  * Pass `tint = colorScheme.error` for destructive rows.
  */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun NavRow(
     title: String,
@@ -34,6 +37,7 @@ fun NavRow(
     leadingIcon: ImageVector? = null,
     subtitle: String? = null,
     enabled: Boolean = true,
+    loading: Boolean = false,
     tint: Color? = null,
     showChevron: Boolean = true,
     trailingValue: String? = null,
@@ -43,7 +47,7 @@ fun NavRow(
     val iconColor = tint ?: MaterialTheme.colorScheme.onSurfaceVariant
     val chevronColor = tint ?: MaterialTheme.colorScheme.onSurfaceVariant
     ListItem(
-        modifier = modifier.clickable(enabled = enabled, onClick = onClick),
+        modifier = modifier.clickable(enabled = enabled && !loading, onClick = onClick),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         headlineContent = {
             Text(text = title, color = titleColor)
@@ -63,27 +67,33 @@ fun NavRow(
         },
         trailingContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (trailingValue != null) {
-                    Text(
-                        text = trailingValue,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.width(CashuTheme.spacing.tight))
-                }
-                when {
-                    trailingIcon != null -> Icon(
-                        imageVector = trailingIcon,
-                        contentDescription = null,
-                        tint = chevronColor,
+                if (loading) {
+                    LoadingIndicator(
                         modifier = Modifier.size(CashuTheme.spacing.loose),
                     )
-                    showChevron -> Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = chevronColor,
-                        modifier = Modifier.size(CashuTheme.spacing.loose),
-                    )
+                } else {
+                    if (trailingValue != null) {
+                        Text(
+                            text = trailingValue,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.width(CashuTheme.spacing.tight))
+                    }
+                    when {
+                        trailingIcon != null -> Icon(
+                            imageVector = trailingIcon,
+                            contentDescription = null,
+                            tint = chevronColor,
+                            modifier = Modifier.size(CashuTheme.spacing.loose),
+                        )
+                        showChevron -> Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = chevronColor,
+                            modifier = Modifier.size(CashuTheme.spacing.loose),
+                        )
+                    }
                 }
             }
         },

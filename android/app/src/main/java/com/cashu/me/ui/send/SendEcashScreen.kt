@@ -134,6 +134,7 @@ import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
 import com.cashu.me.ui.theme.AmountScale
 import com.cashu.me.Core.PendingSendRecovery
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -223,6 +224,7 @@ fun SendEcashScreen(
     var face: SendFace by remember { mutableStateOf(SendFace.Input) }
     var amount by remember { mutableStateOf(initialDraft?.amount ?: "") }
     var sending by remember { mutableStateOf(false) }
+    var sendGeneration by remember { mutableStateOf(0L) }
     var errorText by remember { mutableStateOf<String?>(null) }
     var pickerOpen by remember { mutableStateOf(false) }
     var selectedMintUrl by remember { mutableStateOf(initialDraft?.mintUrl) }
@@ -463,6 +465,8 @@ fun SendEcashScreen(
                             errorText = LockEcashCopy.InvalidRecipientKey
                             return@InputFace
                         }
+                        if (sending) return@InputFace
+                        val generation = ++sendGeneration
                         sending = true
                         scope.launch {
                             try {
@@ -474,24 +478,31 @@ fun SendEcashScreen(
                                     mintUrl = mintUrl,
                                     unit = effectiveUnit,
                                 )
-                                face = SendFace.Generated(result, mintUrl, effectiveUnit, amountValue)
-                                amount = ""
-                            } catch (t: Throwable) {
-                                val detail = if (t.isInsufficientBalance && amountValue <= mintBalance) {
-                                    // The balance covers the amount, but the
-                                    // swap that makes change for it carries a
-                                    // fee the remainder can't absorb — the
-                                    // plain "Not enough balance." reads as a
-                                    // wallet bug when the user typed exactly
-                                    // what the screen says they hold.
-                                    "Not enough balance to cover the mint fee. Try Send Max."
-                                } else {
-                                    t.userFacingWalletMessage
+                                if (sendGeneration == generation) {
+                                    face = SendFace.Generated(result, mintUrl, effectiveUnit, amountValue)
+                                    amount = ""
                                 }
-                                errorText = null
-                                face = SendFace.Failure(detail, t as? PendingSendRecovery)
+                            } catch (t: Throwable) {
+                                if (t is CancellationException) throw t
+                                if (sendGeneration == generation) {
+                                    val detail = if (t.isInsufficientBalance && amountValue <= mintBalance) {
+                                        // The balance covers the amount, but the
+                                        // swap that makes change for it carries a
+                                        // fee the remainder can't absorb — the
+                                        // plain "Not enough balance." reads as a
+                                        // wallet bug when the user typed exactly
+                                        // what the screen says they hold.
+                                        "Not enough balance to cover the mint fee. Try Send Max."
+                                    } else {
+                                        t.userFacingWalletMessage
+                                    }
+                                    errorText = null
+                                    face = SendFace.Failure(detail, t as? PendingSendRecovery)
+                                }
                             } finally {
-                                sending = false
+                                if (sendGeneration == generation) {
+                                    sending = false
+                                }
                             }
                         }
                     },
@@ -878,8 +889,8 @@ private fun GeneratedFace(
     }
     // Poll the mint to detect when the recipient redeems the token. Mirrors
     // iOS startClaimPolling: the spinner shows for the whole watch session
-    // (flipping Pending↔Checking per probe made the row flicker), intervals
-    // back off 5s → 15s, and after 10 checks the row rests at Pending.
+    // (flipping Pending↔Checking per probe made the row flicker), and intervals
+    // back off 5s → 15s until claimed or the screen leaves composition.
     LaunchedEffect(result.token, mintUrl, pollingEnabled) {
         if (!pollingEnabled) {
             if (claimState != ClaimState.Claimed) claimState = ClaimState.Pending
@@ -887,10 +898,10 @@ private fun GeneratedFace(
         }
         claimState = ClaimState.Checking
         var interval = 5_000L
-        repeat(10) {
+        while (true) {
             delay(interval)
             // A spent proof moves the tracked token to Claimed. Probe failures
-            // stay Pending and the automatic watcher keeps trying.
+            // keep Checking and the automatic watcher keeps trying.
             when (checkGeneratedTokenClaim(walletManager, result.token, mintUrl)) {
                 PendingTokenClaimCheckResult.Claimed -> {
                     claimState = ClaimState.Claimed
@@ -901,7 +912,6 @@ private fun GeneratedFace(
             }
             interval = (interval + 1_000L).coerceAtMost(15_000L)
         }
-        claimState = ClaimState.Pending
     }
 
     // Claimed resolves to the shared full-screen terminal (iOS parity), with

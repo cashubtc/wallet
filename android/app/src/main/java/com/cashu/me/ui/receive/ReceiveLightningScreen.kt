@@ -80,6 +80,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import java.text.DateFormat
 import java.util.Date
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
@@ -161,6 +163,49 @@ import com.cashu.me.Core.rememberWalletHaptics
 import com.cashu.me.Core.WalletHaptic
 import com.cashu.me.Models.TransactionKind
 import com.cashu.me.ui.components.paymentDetailWidth
+
+/**
+ * Serializes superseding async request creations (e.g. editing a BOLT12
+ * amount/description or requesting a new on-chain address) so cancellation is
+ * always rethrown and a superseded job never overwrites or clears loading
+ * state for a newer request.
+ */
+internal class LatestRequestRunner(
+    private val scope: CoroutineScope,
+    private val onLoadingChanged: (Boolean) -> Unit,
+) {
+    private var activeJob: Job? = null
+    private var generation: Long = 0L
+
+    fun <T> launch(
+        block: suspend () -> T,
+        onSuccess: (T) -> Unit,
+        onFailure: (Throwable) -> Unit,
+    ): Job {
+        val myGeneration = ++generation
+        onLoadingChanged(true)
+        activeJob?.cancel()
+        val job = scope.launch {
+            try {
+                val value = block()
+                if (generation == myGeneration) {
+                    onSuccess(value)
+                }
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                if (generation == myGeneration) {
+                    onFailure(t)
+                }
+            } finally {
+                if (generation == myGeneration) {
+                    onLoadingChanged(false)
+                }
+            }
+        }
+        activeJob = job
+        return job
+    }
+}
 
 private sealed interface ReceiveLnFace {
     data object Input : ReceiveLnFace
@@ -257,9 +302,10 @@ fun ReceiveLightningScreen(
     // only record). A mint or unit switch resets and re-restores.
     var reusableOfferDescription by remember { mutableStateOf<String?>(null) }
     var reusableOfferDescriptionLoadedFor by remember { mutableStateOf<String?>(null) }
-    // Quote creation is serialized through this handle — a new create cancels
-    // the in-flight one so the slowest job can't clobber the freshest offer.
-    var createJob by remember { mutableStateOf<Job?>(null) }
+    // Quote creation is serialized through this runner — a new create cancels
+    // the in-flight one so the slowest job can't clobber the freshest offer
+    // or clear loading state for its successor.
+    val createRunner = remember(scope) { LatestRequestRunner(scope) { creating = it } }
     var displayActionsOpen by remember { mutableStateOf(false) }
     var methodPickerOpen by remember { mutableStateOf(false) }
 
@@ -370,32 +416,31 @@ fun ReceiveLightningScreen(
         // After validation, amountless rails mint with a null amount; everything
         // else uses the typed base units.
         val requestAmount = if (amountless) null else explicit
-        creating = true
         errorText = null
-        createJob?.cancel()
-        createJob = scope.launch {
-            try {
-                val requestUnit = if (requestMethod == PaymentMethodKind.Onchain) {
-                    "sat"
-                } else {
-                    amountEntryContext.quoteUnit
-                }
-                // Offers are immutable: reuse only matches an offer carrying
-                // this exact description, so a changed description mints fresh.
-                val offerDescription = reusableOfferDescription
-                    .takeIf {
-                        requestMethod == PaymentMethodKind.Bolt12 &&
-                            mintSupportsBolt12Description
-                    }
-                val quote = if (requestMethod == PaymentMethodKind.Onchain && !forceNew) {
+        val requestUnit = if (requestMethod == PaymentMethodKind.Onchain) {
+            "sat"
+        } else {
+            amountEntryContext.quoteUnit
+        }
+        // Offers are immutable: reuse only matches an offer carrying
+        // this exact description, so a changed description mints fresh.
+        val offerDescription = reusableOfferDescription
+            .takeIf {
+                requestMethod == PaymentMethodKind.Bolt12 &&
+                    mintSupportsBolt12Description
+            }
+        val targetMintUrl = activeMint.url
+        createRunner.launch(
+            block = {
+                if (requestMethod == PaymentMethodKind.Onchain && !forceNew) {
                     // Hand the same address out until the mint credits it
                     // (iOS `existingOnchainMintQuote` parity).
-                    walletManager.existingOnchainMintQuote(targetMintUrl = activeMint.url) ?: walletManager.createMintQuote(
+                    walletManager.existingOnchainMintQuote(targetMintUrl = targetMintUrl) ?: walletManager.createMintQuote(
                         amount = null,
                         method = requestMethod,
                         unit = requestUnit,
                         description = null,
-                        targetMintUrl = activeMint.url,
+                        targetMintUrl = targetMintUrl,
                     )
                 } else if (
                     requestMethod == PaymentMethodKind.Bolt12 &&
@@ -405,13 +450,13 @@ fun ReceiveLightningScreen(
                     walletManager.existingAmountlessBolt12Offer(
                         unit = requestUnit,
                         description = offerDescription,
-                        targetMintUrl = activeMint.url,
+                        targetMintUrl = targetMintUrl,
                     ) ?: walletManager.createMintQuote(
                         amount = null,
                         method = requestMethod,
                         unit = requestUnit,
                         description = offerDescription,
-                        targetMintUrl = activeMint.url,
+                        targetMintUrl = targetMintUrl,
                     )
                 } else {
                     walletManager.createMintQuote(
@@ -419,13 +464,16 @@ fun ReceiveLightningScreen(
                         method = requestMethod,
                         unit = requestUnit,
                         description = offerDescription,
-                        targetMintUrl = activeMint.url,
+                        targetMintUrl = targetMintUrl,
                     )
                 }
+            },
+            onSuccess = { quote ->
                 // createMintQuote (and the reuse path) already carry the
                 // description on the returned quote; no face-level copy.
                 face = ReceiveLnFace.Display(quote)
-            } catch (t: Throwable) {
+            },
+            onFailure = { t ->
                 face = ReceiveLnFace.Failure(
                     title = receiveRequestFailureTitle(requestMethod),
                     detail = t.userFacingWalletMessage,
@@ -436,10 +484,8 @@ fun ReceiveLightningScreen(
                         amountOverride = amountOverride,
                     ),
                 )
-            } finally {
-                creating = false
-            }
-        }
+            },
+        )
     }
 
     fun createNewReusableInvoice() {
@@ -583,13 +629,15 @@ fun ReceiveLightningScreen(
     LaunchedEffect(abandonedOnchainQuoteIds.isNotEmpty()) {
         while (abandonedOnchainQuoteIds.isNotEmpty() && successInfo == null) {
             for (quoteId in abandonedOnchainQuoteIds) {
-                val reconciliation = runCatching {
+                val reconciliation = try {
                     walletManager.refreshPendingMintQuote(
                         quoteId,
                         confirmationOwner = ReceiveConfirmationOwner.InFlow,
                     )
+                } catch (t: Throwable) {
+                    if (t is CancellationException) throw t
+                    null
                 }
-                    .getOrNull()
                 if (reconciliation?.hasSettledPayment != true) continue
                 abandonedOnchainQuoteIds = abandonedOnchainQuoteIds - quoteId
                 // Refetch for the credited amount (on-chain always mints sat).
@@ -703,6 +751,7 @@ fun ReceiveLightningScreen(
                                 leadingIcon = {
                                     Icon(Icons.Outlined.IosShare, contentDescription = null)
                                 },
+                                enabled = !creating,
                                 onClick = {
                                     displayActionsOpen = false
                                     context.shareText(
@@ -739,9 +788,12 @@ fun ReceiveLightningScreen(
                             )
                         }
                     } else {
-                        IconButton(onClick = {
-                            context.shareText(current.quote.request, subject = "Payment request")
-                        }) {
+                        IconButton(
+                            enabled = !creating,
+                            onClick = {
+                                context.shareText(current.quote.request, subject = "Payment request")
+                            },
+                        ) {
                             ToolbarIcon(Icons.Outlined.IosShare, contentDescription = "Share")
                         }
                     }
@@ -866,8 +918,12 @@ fun ReceiveLightningScreen(
                         while (true) {
                             delay(intervalMs)
                             if (!walletManager.shouldAttemptMintQuote(current.quote.id)) continue
-                            val refreshed = runCatching { walletManager.pollMintQuote(current.quote.id) }
-                                .getOrNull()
+                            val refreshed = try {
+                                walletManager.pollMintQuote(current.quote.id)
+                            } catch (t: Throwable) {
+                                if (t is CancellationException) throw t
+                                null
+                            }
                                 ?: continue // transient failure — keep monitoring
                             liveQuote = refreshed
                             mintRetryStatus = walletManager.mintQuoteRetryStatus(refreshed.id)
@@ -928,20 +984,26 @@ fun ReceiveLightningScreen(
                     LaunchedEffect(current.quote.id) {
                         if (current.quote.paymentMethod != PaymentMethodKind.Onchain) return@LaunchedEffect
                         while (liveQuote.amountPaid == 0L) {
-                            val observed = runCatching { walletManager.observeOnchainDeposit(liveQuote) }
-                                .getOrNull()
+                            val observed = try {
+                                walletManager.observeOnchainDeposit(liveQuote)
+                            } catch (t: Throwable) {
+                                if (t is CancellationException) throw t
+                                null
+                            }
                             if (observed != null && observed != onchainObservation) {
                                 onchainObservation = observed
                                 // Mint on the wallet's app-lifetime scope so a
                                 // dismissal never cancels a mint mid-flight.
                                 walletManager.launch {
-                                    runCatching {
+                                    try {
                                         walletManager.refreshPendingMintQuote(
                                             current.quote.id,
                                             confirmationOwner = ReceiveConfirmationOwner.InFlow,
                                             observingQuoteId = current.quote.id,
-                                        )
-                                    }.getOrNull()?.quote?.let { liveQuote = it }
+                                        ).quote?.let { liveQuote = it }
+                                    } catch (t: Throwable) {
+                                        if (t is CancellationException) throw t
+                                    }
                                 }
                             }
                             delay(30_000)
@@ -1122,6 +1184,7 @@ fun ReceiveLightningScreen(
                     }
                     DisplayFace(
                         quote = liveQuote,
+                        creating = creating,
                         // On-chain carries its amount inside the Status row.
                         amountLabel = amountLabel.takeUnless {
                             (liveQuote.paymentMethod == PaymentMethodKind.Bolt12 && liveQuote.isAmountless) ||
@@ -1461,6 +1524,7 @@ private val PaymentMethodKind.copyActionTitle: String
 @Composable
 private fun DisplayFace(
     quote: MintQuoteInfo,
+    creating: Boolean,
     amountLabel: String?,
     receivedAmountLabel: String?,
     settlementState: MintQuoteSettlementState?,
@@ -1509,6 +1573,7 @@ private fun DisplayFace(
                     size = qrSize,
                     shareSubject = "Payment request",
                     staticOnly = true,
+                    loading = creating,
                     confirmationMessage = if (quote.paymentMethod == PaymentMethodKind.Onchain) {
                         "Copied Bitcoin address"
                     } else {
@@ -1559,6 +1624,7 @@ private fun DisplayFace(
                         label = "Address",
                         value = TransactionDisplay.middleTruncated(quote.request),
                         valueMonospaced = true,
+                        enabled = !creating,
                         onClick = {
                             haptics.perform(WalletHaptic.Success)
                             onCopy()
@@ -1575,6 +1641,7 @@ private fun DisplayFace(
                         label = "Description",
                         value = descriptionLabel ?: "None",
                         editable = true,
+                        enabled = !creating,
                         onClick = onEditReusableDescription,
                     )
                 } else if (!descriptionLabel.isNullOrBlank()) {
@@ -1586,6 +1653,7 @@ private fun DisplayFace(
                         value = amountLabel ?: "Any",
                         valueMonospaced = amountLabel != null,
                         editable = onEditReusableAmount != null,
+                        enabled = !creating,
                         onClick = onEditReusableAmount,
                     )
                     if (receivedAmountLabel != null) {
@@ -1616,6 +1684,7 @@ private fun DisplayFace(
             // neutral tonal fill (iOS gray .glassButton() parity on every rail).
             PrimaryButton(
                 text = quote.paymentMethod.copyActionTitle,
+                enabled = !creating,
                 onClick = {
                     onCopy()
                     confirmationToastController?.show(

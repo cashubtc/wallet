@@ -15,7 +15,8 @@ struct NPCPaymentReceipt: Equatable {
     }
 }
 
-/// Capture before exposing the QR; keep the baseline when the sheet resumes.
+/// Capture asynchronously on the first check while the QR is already visible;
+/// keep the baseline when the sheet resumes.
 @MainActor
 final class NPCReceiveSession: ObservableObject {
     let address: String
@@ -83,6 +84,7 @@ class NPCService: ObservableObject {
     @Published var lightningAddress: String = ""
     @Published var configuredMintUrl: String = ""
     @Published var isLoading: Bool = false
+    @Published private(set) var isChangingMint: Bool = false
     @Published var isConnected: Bool = false
     @Published var errorMessage: String?
     @Published private(set) var paymentClaims: [String: NPCPaymentClaim] = [:]
@@ -103,7 +105,8 @@ class NPCService: ObservableObject {
     
     private var client: (any NpubCashClientProtocol)?
     private var suppressSettingsSideEffects = false
-    private var connectionTask: Task<Void, Never>?
+    private var connectionTask: Task<[NpubCashQuote]?, Never>?
+    private var mintChangeGeneration: UInt64 = 0
     private(set) var sessionID = UUID()
     private let makeClient: (String, String) throws -> any NpubCashClientProtocol
     private var nostrSecretKey: String?
@@ -145,8 +148,14 @@ class NPCService: ObservableObject {
     /// Initialize connection on app startup if enabled
     /// Should be called after wallet seed is available
     func initializeIfEnabled() async {
-        await connect()
-        applyPollingPreferences()
+        guard isEnabled, isInitialized else {
+            stopBackgroundRefresh()
+            return
+        }
+        let connectedWithQuotes = await connectReturningInitialQuotes() != nil
+        if !connectedWithQuotes {
+            applyPollingPreferences()
+        }
     }
 
     func reloadWalletScopedData() {
@@ -206,11 +215,14 @@ class NPCService: ObservableObject {
     
     /// Share one attempt across startup, foreground, settings, and payment checks.
     func connect() async {
-        guard isEnabled, let secretKey = nostrSecretKey else { return }
-        if isConnected, client != nil { return }
+        _ = await connectReturningInitialQuotes()
+    }
+
+    private func connectReturningInitialQuotes() async -> [NpubCashQuote]? {
+        guard isEnabled, let secretKey = nostrSecretKey else { return nil }
+        if isConnected, client != nil { return nil }
         if let connectionTask {
-            await connectionTask.value
-            return
+            return await connectionTask.value
         }
 
         let session = sessionID
@@ -218,21 +230,21 @@ class NPCService: ObservableObject {
         errorMessage = nil
         let task = Task { await establishConnection(secretKey: secretKey, session: session) }
         connectionTask = task
-        await task.value
+        return await task.value
     }
 
-    private func establishConnection(secretKey: String, session: UUID) async {
+    private func establishConnection(secretKey: String, session: UUID) async -> [NpubCashQuote]? {
         defer {
             if sessionID == session {
                 connectionTask = nil
                 isLoading = false
             }
         }
-        guard isCurrentSession(session), !Task.isCancelled else { return }
+        guard isCurrentSession(session), !Task.isCancelled else { return nil }
         do {
             let connectedClient = try makeClient(baseURL, secretKey)
             let quotes = try await connectedClient.getQuotes(since: nil)
-            guard isCurrentSession(session), !Task.isCancelled else { return }
+            guard isCurrentSession(session), !Task.isCancelled else { return nil }
 
             var configured = quotes.compactMap(\.mintUrl).first ?? ""
             if let selected = selectedMintUrl {
@@ -246,19 +258,22 @@ class NPCService: ObservableObject {
                     print("NPC: mint reconciliation failed: \(error)")
                 }
             }
-            guard isCurrentSession(session), !Task.isCancelled else { return }
+            guard isCurrentSession(session), !Task.isCancelled else { return nil }
             client = connectedClient
             configuredMintUrl = configured
             isConnected = true
             errorMessage = nil
-            startBackgroundRefresh()
+            // Reuse the connection snapshot for startup checks when no check is already awaiting us.
+            startBackgroundRefresh(runInitialCheck: !paymentCheckInProgress, initialQuotes: quotes)
+            return quotes
         } catch {
-            guard isCurrentSession(session), !Task.isCancelled else { return }
+            guard isCurrentSession(session), !Task.isCancelled else { return nil }
             client = nil
             isConnected = false
             errorMessage = ActionErrorMessages.message(for: error, context: .lightningConnection)
             // Keep periodic recovery available after a failed initial attempt.
-            startBackgroundRefresh()
+            startBackgroundRefresh(runInitialCheck: false)
+            return nil
         }
     }
 
@@ -269,12 +284,14 @@ class NPCService: ObservableObject {
     /// Disconnect and stop background refresh
     func disconnect() {
         sessionID = UUID()
+        mintChangeGeneration &+= 1
         receiveSessions.removeAll()
         observedPaidQuoteIDs.removeAll()
         paymentClaims.removeAll()
         connectionTask?.cancel()
         connectionTask = nil
         isLoading = false
+        isChangingMint = false
         paymentCheckInProgress = false
         stopBackgroundRefresh()
         isConnected = false
@@ -291,6 +308,15 @@ class NPCService: ObservableObject {
     /// otherwise incoming payments keep landing on the server's default mint.
     func changeMint(to mintUrl: String) async throws {
         let session = sessionID
+        mintChangeGeneration &+= 1
+        let generation = mintChangeGeneration
+        isChangingMint = true
+        errorMessage = nil
+        defer {
+            if sessionID == session, mintChangeGeneration == generation {
+                isChangingMint = false
+            }
+        }
         await connect()
         guard isCurrentSession(session) else { throw CancellationError() }
         guard let client, isConnected else { throw NPCError.notConnected }
@@ -319,6 +345,10 @@ class NPCService: ObservableObject {
     
     /// Check for new payments and claim them
     func checkAndClaimPayments() async {
+        await checkAndClaimPayments(prefetchedQuotes: nil)
+    }
+
+    private func checkAndClaimPayments(prefetchedQuotes: [NpubCashQuote]?) async {
         guard isEnabled, shouldCheckIncomingInvoices else { return }
         guard !paymentCheckInProgress else { return }
 
@@ -328,14 +358,24 @@ class NPCService: ObservableObject {
             if sessionID == session { paymentCheckInProgress = false }
         }
 
-        if !isConnected || client == nil {
-            await connect()
+        let initialQuotes: [NpubCashQuote]?
+        if let prefetchedQuotes {
+            initialQuotes = prefetchedQuotes
+        } else if !isConnected || client == nil {
+            initialQuotes = await connectReturningInitialQuotes()
+        } else {
+            initialQuotes = nil
         }
 
         guard isCurrentSession(session), isConnected, client != nil else { return }
         
         do {
-            let quotes = try await getQuotes(since: nil)
+            let quotes: [NpubCashQuote]
+            if let initialQuotes {
+                quotes = initialQuotes
+            } else {
+                quotes = try await getQuotes(since: nil)
+            }
             guard isCurrentSession(session), !Task.isCancelled else { return }
             lastCheck = Date()
             errorMessage = nil
@@ -462,14 +502,14 @@ class NPCService: ObservableObject {
         return inFlow
     }
     
-    func startBackgroundRefresh() {
+    func startBackgroundRefresh(runInitialCheck: Bool = true, initialQuotes: [NpubCashQuote]? = nil) {
         stopBackgroundRefresh()
 
         guard isEnabled, isInitialized, shouldCheckIncomingInvoices else { return }
 
         // A failed connection waits for the timer; do not immediately recurse.
-        if isConnected {
-            Task { await checkAndClaimPayments() }
+        if runInitialCheck && isConnected {
+            Task { await checkAndClaimPayments(prefetchedQuotes: initialQuotes) }
         }
 
         guard shouldPeriodicallyCheckIncomingInvoices else { return }

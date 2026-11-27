@@ -167,6 +167,7 @@ struct ReceiveLightningView: View {
                                 ShareLink(item: quote.request) {
                                     Label("Share", systemImage: "square.and.arrow.up")
                                 }
+                                .disabled(isCreatingRequest)
                                 if quote.paymentMethod == .bolt12 {
                                     Button {
                                         createNewAmountlessOffer(for: quote)
@@ -199,6 +200,7 @@ struct ReceiveLightningView: View {
                                 Image(systemName: "square.and.arrow.up")
                                     .toolbarIconTapTarget()
                             }
+                            .disabled(isCreatingRequest)
                             .accessibilityLabel("Share request")
                         }
                     }
@@ -627,6 +629,7 @@ struct ReceiveLightningView: View {
             PaymentDetailContent(fitsContent: true) { qrSize in
                 PaymentCodeCard(
                     content: quote.request, size: qrSize,
+                    isLoading: isCreatingRequest,
                     onCopy: { copyRequest(quote.request) },
                     onShare: { shareQuoteRequest(quote.request) }
                 )
@@ -662,6 +665,8 @@ struct ReceiveLightningView: View {
                                                symbol: "doc.on.doc", hint: "Copies the Bitcoin address") {
                                 copyRequest(quote.request)
                             }
+                            .disabled(isCreatingRequest)
+                            .opacity(isCreatingRequest ? 0.5 : 1)
                         }
                         PaymentMetadataRow(label: "Mint", value: mintDisplayValue(for: quote) ?? "Unknown mint")
                         if quote.paymentMethod == .bolt12 && mintSupportsBolt12Description {
@@ -671,6 +676,8 @@ struct ReceiveLightningView: View {
                                     ?? quote.description ?? "None",
                                 action: { showReusableDescriptionEditor = true }
                             )
+                            .disabled(isCreatingRequest)
+                            .opacity(isCreatingRequest ? 0.5 : 1)
                         } else if let description = CashuRequestStore.shared.intent(forQuoteId: quote.id)?.displayDescription
                             ?? MintQuoteDomain.normalizedOfferDescription(quote.description) {
                             DescriptionDetailRow(description: description)
@@ -682,6 +689,8 @@ struct ReceiveLightningView: View {
                                     : quote.amount.map { formatQuoteAmount($0, unit: quote.unit) } ?? "Any",
                                 action: { showReusableAmountPicker = true }
                             )
+                            .disabled(isCreatingRequest)
+                            .opacity(isCreatingRequest ? 0.5 : 1)
                             if quote.amountIssued > 0 {
                                 PaymentMetadataRow(label: "Total received",
                                           value: formatQuoteAmount(quote.amountIssued, unit: quote.unit))
@@ -707,6 +716,7 @@ struct ReceiveLightningView: View {
                 Text(copyButtonTitle(for: quote))
             }
             .flatSheetSecondaryButton()
+            .disabled(isCreatingRequest)
             .padding(.horizontal)
             .padding(.bottom, 16)
             .fixedSize(horizontal: false, vertical: true)
@@ -1440,7 +1450,11 @@ struct ReceiveLightningView: View {
         quoteStatusTask = Task { @MainActor in
             switch quote.paymentMethod {
             case .bolt11:
-                await pollMintQuote(quoteId: quote.id, initialInterval: 5, maxInterval: 15)
+                if quote.state != .pending || quote.mintableAmount > 0 {
+                    await refreshMintQuoteStatus()
+                }
+                guard !Task.isCancelled, !isPaid else { return }
+                await monitorBolt11Quote(quoteId: quote.id)
             case .bolt12:
                 // A reusable offer must keep making progress even when a
                 // websocket stays connected but stops delivering updates.
@@ -1451,6 +1465,31 @@ struct ReceiveLightningView: View {
                 await refreshMintQuoteStatus()
                 await monitorMintQuoteViaSubscription(quoteId: quote.id, paymentMethod: .onchain)
             }
+        }
+    }
+
+    /// The websocket is an accelerator, not the only path to "paid": a socket
+    /// can stay connected while a proxy, NAT or mobile network silently stops
+    /// delivering its frames. A slow poll beside it keeps the sheet making
+    /// progress in that case (Android `ReceiveLightningScreen` parity, which
+    /// always polls next to the subscription). Whichever loop finishes first
+    /// (paid, expired, quote replaced) cancels the other.
+    @MainActor
+    private func monitorBolt11Quote(quoteId: String) async {
+        // Without websockets the subscription path already polls, backing off from 5 s to 15 s.
+        guard SettingsManager.shared.useWebsockets else {
+            await monitorMintQuoteViaSubscription(quoteId: quoteId, paymentMethod: .bolt11)
+            return
+        }
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { @MainActor in
+                await monitorMintQuoteViaSubscription(quoteId: quoteId, paymentMethod: .bolt11)
+            }
+            group.addTask { @MainActor in
+                await pollMintQuote(quoteId: quoteId, initialInterval: 15, maxInterval: 15)
+            }
+            await group.next()
+            group.cancelAll()
         }
     }
 
@@ -1465,7 +1504,8 @@ struct ReceiveLightningView: View {
                 quoteId: quoteId,
                 paymentMethod: paymentMethod
             ) {
-                while !Task.isCancelled && !isPaid && (!isExpired || paymentMethod == .onchain) {
+                while !Task.isCancelled && !isPaid && mintQuote?.id == quoteId
+                    && (!isExpired || paymentMethod == .onchain || (mintQuote?.mintableAmount ?? 0) > 0) {
                     let notification = try await subscription.recv()
                     guard !Task.isCancelled else { break }
 
@@ -1486,8 +1526,10 @@ struct ReceiveLightningView: View {
             // Fall back to polling when subscriptions are unavailable or fail.
         }
 
-        let initialInterval: UInt64 = paymentMethod == .onchain ? 30 : 10
-        await pollMintQuote(quoteId: quoteId, initialInterval: initialInterval, maxInterval: 30)
+        guard !Task.isCancelled, !isPaid else { return }
+        let initialInterval: UInt64 = paymentMethod == .onchain ? 30 : 5
+        let maxInterval: UInt64 = paymentMethod == .onchain ? 30 : 15
+        await pollMintQuote(quoteId: quoteId, initialInterval: initialInterval, maxInterval: maxInterval)
     }
 
     @MainActor
