@@ -9,6 +9,7 @@ LIVE_PAYMENT_CLASSES=(
   LiveCdkPaymentUITests
   LiveMintTransferUITests
   LiveNutshellPaymentUITests
+  LivePendingEcashUITests
 )
 
 case "${1:-}" in

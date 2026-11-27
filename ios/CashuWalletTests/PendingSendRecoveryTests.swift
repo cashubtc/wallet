@@ -555,3 +555,69 @@ final class PendingSendRecoveryTests: XCTestCase {
     }
 
 }
+
+/// What the pending-ecash screen says after a check or a reclaim.
+@MainActor
+final class PendingSendRecoveryNoticeTests: XCTestCase {
+    private let send = PendingSend(id: "a", amount: 16, token: "token")
+
+    private func snapshot(_ outcome: PendingSendRecovery.Outcome, sends: [PendingSend] = []) -> PendingSendRecovery {
+        PendingSendRecovery(
+            mintURL: "https://mint.example", unit: "sat", operationIDs: sends.map(\.id), sends: sends, outcome: outcome
+        )
+    }
+
+    private func notice(
+        _ snapshot: PendingSendRecovery, checkedOnly: Bool = true, reclaimFailure: String? = nil,
+        checkFailed: Bool = false, returned: String? = nil
+    ) -> PendingSendRecoveryView.Notice? {
+        PendingSendRecoveryView.notice(
+            after: snapshot, checkedOnly: checkedOnly, reclaimFailure: reclaimFailure,
+            checkFailed: checkFailed, returned: returned
+        )
+    }
+
+    func testSettledOutcomesLeaveItToTheStatusScreen() {
+        XCTAssertNil(notice(snapshot(.completed), reclaimFailure: "Already spent.", checkFailed: true))
+        XCTAssertNil(notice(snapshot(.returned), checkedOnly: false, returned: "16 sat"))
+    }
+
+    func testACheckThatChangesNothingSaysSoInAToast() {
+        for sends in [[send], [send, PendingSend(id: "b", amount: 21, token: nil)]] {
+            let checked = notice(snapshot(.pending, sends: sends))
+            XCTAssertEqual(checked?.message, "Not claimed yet")
+            XCTAssertNil(checked?.title)
+            XCTAssertEqual(checked?.isToast, true)
+        }
+    }
+
+    func testAFailedReclaimIsNamedBeforeAFailedCheck() {
+        let failed = notice(
+            snapshot(.pending, sends: [send]), checkedOnly: false, reclaimFailure: "Couldn't reach the mint.", checkFailed: true
+        )
+        XCTAssertEqual(failed?.title, "Couldn't reclaim")
+        XCTAssertEqual(failed?.message, "Couldn't reach the mint.")
+        XCTAssertEqual(failed?.severity, .error)
+        XCTAssertEqual(failed?.isToast, false)
+    }
+
+    func testAFailedCheckAsksForAnotherTry() {
+        for outcome in [PendingSendRecovery.Outcome.pending, .unverified] {
+            let failed = notice(snapshot(outcome, sends: outcome == .pending ? [send] : []), checkFailed: true)
+            XCTAssertEqual(failed?.title, "Couldn't check status")
+            XCTAssertEqual(failed?.message, "Check your connection and try again.")
+            XCTAssertEqual(failed?.isToast, false)
+        }
+    }
+
+    func testReclaimingOneOfSeveralNamesWhatCameBack() {
+        let returned = notice(snapshot(.pending, sends: [send]), checkedOnly: false, returned: "21 sat")
+        XCTAssertEqual(returned?.message, "Reclaimed 21 sat")
+        XCTAssertEqual(returned?.isToast, true)
+    }
+
+    func testAnUnresolvedSendKeepsTheScreensOwnWords() {
+        XCTAssertNil(notice(snapshot(.unverified)))
+        XCTAssertNil(notice(snapshot(.unverified), checkedOnly: false, returned: "16 sat"))
+    }
+}
