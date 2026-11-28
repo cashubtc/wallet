@@ -39,6 +39,7 @@ object TransactionDisplay {
             TransactionKind.Onchain -> when {
                 transaction.type != TransactionType.Incoming -> "Bitcoin sent"
                 transaction.isUnfundedAddress -> "Bitcoin address"
+                transaction.isPendingOnchainDeposit -> "Receiving Bitcoin"
                 else -> "Bitcoin received"
             }
             TransactionKind.Ecash -> if (transaction.type == TransactionType.Incoming) {

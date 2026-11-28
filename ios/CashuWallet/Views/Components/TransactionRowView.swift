@@ -27,7 +27,7 @@ struct TransactionRowView: View {
                         .font(.body.weight(.medium))
                         .lineLimit(1)
 
-                    Text(Self.formatRelativeDate(transaction.date))
+                    Text(transaction.isPendingOnchainDeposit ? "Pending" : Self.formatRelativeDate(transaction.date))
                         .cashuText(.metadata)
                         .foregroundStyle(.secondary)
                 }

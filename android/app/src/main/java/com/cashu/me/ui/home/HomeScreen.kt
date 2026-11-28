@@ -327,7 +327,7 @@ fun HomeScreen(
                                 model = TransactionRowModel(
                                     transaction = tx,
                                     title = TransactionDisplay.title(tx, walletState.mints),
-                                    timestamp = formatRelativeTimestamp(tx.dateEpochMillis),
+                                    timestamp = if (tx.isPendingOnchainDeposit) "Pending" else formatRelativeTimestamp(tx.dateEpochMillis),
                                     primaryAmount = amountDisplay.primary,
                                     secondaryAmount = amountDisplay.secondary,
                                     amountHidden = settings.hideBalances,

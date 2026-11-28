@@ -30,11 +30,11 @@ sealed interface OnchainDepositStatus {
         Waiting -> StatusText("Waiting for deposit", "Waiting for deposit")
         Expired -> StatusText("Expired", "Expired")
         is InMempool -> format(amount).let {
-            StatusText("${it.joined} · in mempool", "${it.spoken}, in mempool")
+            StatusText("${it.joined} · Pending in mempool", "${it.spoken}, pending in mempool")
         }
         is Confirming -> format(amount).let {
             val count = confirmationText(confirmations)
-            StatusText("${it.joined} · $count", "${it.spoken}, $count")
+            StatusText("${it.joined} · Pending · $count", "${it.spoken}, pending, $count")
         }
         is Adding -> format(amount).let {
             StatusText("Adding ${it.joined} to wallet…", "Adding ${it.spoken} to wallet")
@@ -64,8 +64,8 @@ sealed interface OnchainDepositStatus {
     val historyText: String?
         get() = when (this) {
             Waiting -> "Waiting for deposit"
-            is InMempool -> "In mempool"
-            is Confirming -> confirmationText(confirmations)
+            is InMempool -> "Pending · in mempool"
+            is Confirming -> "Pending · ${confirmationText(confirmations)}"
             is Adding -> "Adding to wallet…"
             is Retrying -> if (needsAttention) "Not added yet" else "Retrying"
             Expired, is Received -> null

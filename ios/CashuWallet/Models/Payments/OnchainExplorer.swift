@@ -60,11 +60,11 @@ enum OnchainDepositStatus: Equatable {
             return ("Expired", "Expired")
         case .inMempool(let amount):
             let parts = format(amount)
-            return ("\(parts.joined) · in mempool", "\(parts.spoken), in mempool")
+            return ("\(parts.joined) · Pending in mempool", "\(parts.spoken), pending in mempool")
         case .confirming(let amount, let confirmations):
             let parts = format(amount)
             let count = Self.confirmationText(confirmations)
-            return ("\(parts.joined) · \(count)", "\(parts.spoken), \(count)")
+            return ("\(parts.joined) · Pending · \(count)", "\(parts.spoken), pending, \(count)")
         case .adding(let amount):
             let parts = format(amount)
             return ("Adding \(parts.joined) to wallet…", "Adding \(parts.spoken) to wallet")
@@ -89,8 +89,8 @@ enum OnchainDepositStatus: Equatable {
     var historyText: String? {
         switch self {
         case .waiting: return "Waiting for deposit"
-        case .inMempool: return "In mempool"
-        case .confirming(_, let confirmations): return Self.confirmationText(confirmations)
+        case .inMempool: return "Pending · in mempool"
+        case .confirming(_, let confirmations): return "Pending · \(Self.confirmationText(confirmations))"
         case .adding: return "Adding to wallet…"
         case .retrying(_, let needsAttention): return needsAttention ? "Not added yet" : "Retrying"
         case .expired, .received: return nil
