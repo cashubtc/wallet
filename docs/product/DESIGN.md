@@ -1070,14 +1070,22 @@ The canonical list pattern. Defined in
   motion; past its quote expiry it reads Expired and retires its QR. Its row
   note and receipt Status use the shared on-chain vocabulary — see **On-chain
   receive status**.)*
+  *(2026-11-28: once a funded address is still awaiting mint issuance, the
+  shared title reads **"Receiving Bitcoin"** and the Home/History subtitle
+  reads **"Pending"**. The receipt keeps the observed confirmation detail in
+  Status, explicitly prefixed with Pending so a block confirmation cannot be
+  mistaken for spendable ecash.)*
 - **Timestamp**: `.caption`, `Color.secondary`, immediately under the title.
   Formatted with `RelativeDateTimeFormatter(.abbreviated)` ("2 hr ago", "3 d ago").
 - **Trailing amount**: `.system(.body, design: .rounded).weight(.medium)
   .monospacedDigit()`, `.contentTransition(.numericText(value:))`. Completed
   incoming → green `+amount`; completed outgoing → unsigned `.primary`; pending
   or expired → unsigned `.secondary`.
-- **Pending indicator**: none on the row. Pending is the muted `.secondary`
-  amount alone (the `arrow.triangle.2.circlepath` refresh button was removed
+- **Pending indicator**: none on the row, except a funded on-chain deposit
+  awaiting ecash issuance: the title reads **"Receiving Bitcoin"** and the
+  subtitle reads **"Pending"**. Its amount remains muted, showing it has not
+  joined the balance. Other pending rows use the muted `.secondary` amount
+  alone (the `arrow.triangle.2.circlepath` refresh button was removed
   2026-06-01). Manual re-check is History pull-to-refresh
   (`syncPendingMintQuotes()` + `checkAllPendingTokens()`).
 - **Separator**: none. Home and History activity rows flow on the canvas with
@@ -1246,8 +1254,8 @@ instant rails its sheet says, quietly and in place, what is happening.
   no notice.
 - **Status** is always mounted and only its value changes (an opacity
   cross-fade, none under Reduce Motion), on one line except at accessibility
-  text sizes. Values: "Waiting for deposit" → "{amount} · in mempool" →
-  "{amount} · *n* confirmation(s)" → "Adding {amount} to wallet…" → the shared
+  text sizes. Values: "Waiting for deposit" → "{amount} · Pending in mempool" →
+  "{amount} · Pending · *n* confirmation(s)" → "Adding {amount} to wallet…" → the shared
   success screen. "{amount} · retrying" while issuance retries automatically;
   "{amount} · not added yet" once retries need attention (below);
   "Expired" for an address past its quote expiry with nothing paid. The mint's

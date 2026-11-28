@@ -65,6 +65,11 @@ data class WalletTransaction(
     val isUnsettled: Boolean
         get() = status == TransactionStatus.Pending || status == TransactionStatus.Expired
 
+    /** Bitcoin has arrived, but the mint has not issued its ecash yet. */
+    val isPendingOnchainDeposit: Boolean
+        get() = kind == TransactionKind.Onchain && type == TransactionType.Incoming &&
+            status == TransactionStatus.Pending && !isUnfundedAddress
+
     /**
      * Mint-quote id to re-check when opening this row's detail, if any.
      * Incoming unsettled mint quotes and reusable offers (not ecash or melts).

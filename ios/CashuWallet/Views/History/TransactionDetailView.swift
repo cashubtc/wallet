@@ -356,7 +356,7 @@ struct TransactionDetailView: View {
             // row and the receive sheet use (DESIGN.md → On-chain receive status).
             if transaction.kind == .onchain, transaction.type == .incoming,
                let stage = transaction.statusNote {
-                return stage
+                return "Pending · \(stage)"
             }
             return "Pending"
         case .failed:  return "Failed"

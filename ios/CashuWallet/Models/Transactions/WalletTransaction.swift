@@ -77,6 +77,11 @@ struct WalletTransaction: Identifiable {
     /// "Bitcoin address" and carries no amount until a deposit is seen.
     var isUnfundedAddress: Bool = false
 
+    /// Bitcoin has arrived, but the mint has not issued its ecash yet.
+    var isPendingOnchainDeposit: Bool {
+        kind == .onchain && type == .incoming && status == .pending && !isUnfundedAddress
+    }
+
     /// Set when this row stands for a whole transfer between two held mints
     /// rather than for the Lightning payment that carried it.
     var transfer: MintTransferLeg? = nil
@@ -154,6 +159,7 @@ struct WalletTransaction: Identifiable {
         // Nothing has been received while the invoice awaits payment.
         if isUnpaidInvoice { return "Lightning invoice" }
         if isUnfundedAddress { return "Bitcoin address" }
+        if isPendingOnchainDeposit { return "Receiving Bitcoin" }
         switch (kind, type) {
         case (.ecash,     .incoming): return "Ecash received"
         case (.ecash,     .outgoing): return "Ecash sent"
