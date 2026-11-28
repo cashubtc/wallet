@@ -249,11 +249,11 @@ class PendingMintQuoteTransactionsTest {
         assertEquals(0L, rows(deposit.copy(amount = 100), observed = false).single().amount)
         val pending = rows().single()
         assertFalse(pending.isUnfundedAddress)
-        assertEquals("Bitcoin received", TransactionDisplay.title(pending))
+        assertEquals("Receiving Bitcoin", TransactionDisplay.title(pending))
         assertEquals(42L, pending.amount)
         assertEquals(TransactionStatus.Pending, pending.status)
         assertEquals("txid", pending.preimage)
-        assertEquals("In mempool", pending.statusNote)
+        assertEquals("Pending · in mempool", pending.statusNote)
         assertEquals(listOf(pending), recentPaymentTransactions(rows(), 5))
         // Offline, the last reload's stage stands; pre-vocabulary notes are rebuilt.
         fun offline(previous: WalletTransaction) = pendingMintQuoteTransactions(

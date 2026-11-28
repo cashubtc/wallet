@@ -56,9 +56,9 @@ class OnchainDepositStatusTest {
     fun sheetValuesCarryTheAmountAndHistoryTextNeverDoes() {
         assertEquals("Waiting for deposit", OnchainDepositStatus.Waiting.sheetValue(sats).text)
         assertEquals("Expired", OnchainDepositStatus.Expired.sheetValue(sats).text)
-        assertEquals("2,317 sat · in mempool", OnchainDepositStatus.InMempool(2_317).sheetValue(sats).text)
-        assertEquals("2,317 sat · 1 confirmation", OnchainDepositStatus.Confirming(2_317, 1).sheetValue(sats).text)
-        assertEquals("2,317 sat · 2 confirmations", OnchainDepositStatus.Confirming(2_317, 2).sheetValue(sats).text)
+        assertEquals("2,317 sat · Pending in mempool", OnchainDepositStatus.InMempool(2_317).sheetValue(sats).text)
+        assertEquals("2,317 sat · Pending · 1 confirmation", OnchainDepositStatus.Confirming(2_317, 1).sheetValue(sats).text)
+        assertEquals("2,317 sat · Pending · 2 confirmations", OnchainDepositStatus.Confirming(2_317, 2).sheetValue(sats).text)
         assertEquals("Adding 2,317 sat to wallet…", OnchainDepositStatus.Adding(2_317).sheetValue(sats).text)
         assertEquals("2,317 sat · retrying", OnchainDepositStatus.Retrying(2_317, false).sheetValue(sats).text)
         val attention = OnchainDepositStatus.Retrying(2_317, true).sheetValue(sats)
@@ -67,12 +67,12 @@ class OnchainDepositStatusTest {
         assertEquals("2,317 sat, not added to your wallet yet. It's safe and we'll keep trying.", attention.spoken)
 
         val symbol = OnchainDepositStatus.InMempool(2_317).sheetValue { formatter.satsParts(it, useBitcoinSymbol = true) }
-        assertEquals("₿2,317 · in mempool", symbol.text)
+        assertEquals("₿2,317 · Pending in mempool", symbol.text)
         // TalkBack never reads a bare ₿.
-        assertEquals("2,317 sats, in mempool", symbol.spoken)
+        assertEquals("2,317 sats, pending in mempool", symbol.spoken)
 
         assertEquals("Waiting for deposit", OnchainDepositStatus.Waiting.historyText)
-        assertEquals("In mempool", OnchainDepositStatus.InMempool(2_317).historyText)
+        assertEquals("Pending · in mempool", OnchainDepositStatus.InMempool(2_317).historyText)
         assertEquals("1 confirmation", OnchainDepositStatus.Confirming(2_317, 1).historyText)
         assertEquals("Adding to wallet…", OnchainDepositStatus.Adding(2_317).historyText)
         assertEquals("Retrying", OnchainDepositStatus.Retrying(2_317, false).historyText)
